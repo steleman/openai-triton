@@ -9,7 +9,7 @@ Triton will not build with LLVM 20.1.0 or LLVM 19.1.1. Several public MLIR inter
 
 The original [README.md](https://github.com/steleman/openai-triton/blob/main/README.md) file has been renamed to  [TRITON.OPENAI.README.md](https://github.com/steleman/openai-triton/blob/triton-3.4.0-llvm-21.1.1-fc41/TRITON.OPENAI.README.md).
 
-Build scripts are in the build_scripts directory.
+Build scripts are in the `build_scripts` directory.
 
 Build instructions:
 ----------------------
