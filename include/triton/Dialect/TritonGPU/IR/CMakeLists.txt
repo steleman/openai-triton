@@ -1,4 +1,5 @@
 set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
+set(MLIR_TBLGEN "${LLVM_BINDIR}/mlir-tblgen")
 
 set(LLVM_TARGET_DEFINITIONS TritonGPUOps.td)
 mlir_tablegen(Dialect.h.inc -gen-dialect-decls -dialect=ttg)
@@ -10,6 +11,22 @@ mlir_tablegen(Types.cpp.inc -gen-typedef-defs -typedefs-dialect=ttg)
 add_mlir_doc(TritonGPUDialect TritonGPUDialect dialects/ -gen-dialect-doc)
 add_mlir_doc(TritonGPUOps TritonGPUOps dialects/ -gen-op-doc)
 add_public_tablegen_target(TritonGPUTableGen)
+add_custom_target(TritonGPUTableGenCustomTarget
+                  COMMAND /bin/true
+                  DEPENDS
+                  Dialect.h.inc
+                  Dialect.cpp.inc
+                  Ops.h.inc
+                  Ops.cpp.inc
+                  Types.h.inc
+                  Types.cpp.inc
+                  BYPRODUCTS
+                  Dialect.h.inc
+                  Dialect.cpp.inc
+                  Ops.h.inc
+                  Ops.cpp.inc
+                  Types.h.inc
+                  Types.cpp.inc)
 
 set(LLVM_TARGET_DEFINITIONS TritonGPUAttrDefs.td)
 mlir_tablegen(AttrInterfaces.h.inc -gen-attr-interface-decls)
@@ -19,8 +36,33 @@ mlir_tablegen(AttrDefs.cpp.inc -gen-attrdef-defs)
 mlir_tablegen(OpsEnums.h.inc -gen-enum-decls)
 mlir_tablegen(OpsEnums.cpp.inc -gen-enum-defs)
 add_public_tablegen_target(TritonGPUAttrDefsIncGen)
+add_custom_target(TritonGPUAttrDefsIncGenCustomTarget
+                  COMMAND /bin/true
+                  DEPENDS
+                  AttrInterfaces.h.inc
+                  AttrInterfaces.cpp.inc
+                  AttrDefs.h.inc
+                  AttrDefs.cpp.inc
+                  OpsEnums.h.inc
+                  OpsEnums.cpp.inc
+                  BYPRODUCTS
+                  AttrInterfaces.h.inc
+                  AttrInterfaces.cpp.inc
+                  AttrDefs.h.inc
+                  AttrDefs.cpp.inc
+                  OpsEnums.h.inc
+                  OpsEnums.cpp.inc)
 
 set(LLVM_TARGET_DEFINITIONS TritonGPUTypeInterfaces.td)
 mlir_tablegen(TypeInterfaces.h.inc -gen-type-interface-decls)
 mlir_tablegen(TypeInterfaces.cpp.inc -gen-type-interface-defs)
 add_public_tablegen_target(TritonGPUTypeInterfacesIncGen)
+add_custom_target(TritonGPUTypeInterfacesIncGenCustomTarget
+                  COMMAND /bin/true
+                  DEPENDS
+                  TypeInterfaces.h.inc
+                  TypeInterfaces.cpp.inc
+                  BYPRODUCTS
+                  TypeInterfaces.h.inc
+                  TypeInterfaces.cpp.inc)
+

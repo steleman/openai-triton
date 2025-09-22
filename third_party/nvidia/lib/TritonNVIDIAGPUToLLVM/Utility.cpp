@@ -114,7 +114,9 @@ Value permute(Location loc, RewriterBase &rewriter, Value a, Value b,
 
 /// Create a predicate with just single active thread.
 Value createElectPredicate(Location loc, RewriterBase &rewriter) {
-  return rewriter.create<NVVM::ElectSyncOp>(loc, i1_ty);
+  auto b = TritonLLVMOpBuilder(loc, rewriter);
+  Value mask = b.i32_val(0xFFFFFFFF);
+  return rewriter.create<NVVM::ElectSyncOp>(loc, i1_ty, mask);
 }
 
 void createSyncWarp(Location loc, OpBuilder &rewriter) {

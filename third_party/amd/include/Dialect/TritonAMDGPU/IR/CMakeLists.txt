@@ -9,6 +9,20 @@ mlir_tablegen(Ops.cpp.inc -gen-op-defs)
 add_mlir_doc(TritonAMDGPUDialect TritonAMDGPUDialect dialects/ -gen-dialect-doc)
 add_mlir_doc(TritonAMDGPUOps TritonAMDGPUOps dialects/ -gen-op-doc)
 add_public_tablegen_target(TritonAMDGPUTableGen)
+add_custom_target(TritonAMDGPUTableGenCustomTarget
+                  COMMAND /bin/true
+                  DEPENDS
+                  Dialect.h.inc
+                  Dialect.cpp.inc
+                  OpsConversions.inc
+                  Ops.h.inc
+                  Ops.cpp.inc
+                  BYPRODUCTS
+                  Dialect.h.inc
+                  Dialect.cpp.inc
+                  OpsConversions.inc
+                  Ops.h.inc
+                  Ops.cpp.inc)
 
 set(LLVM_TARGET_DEFINITIONS TritonAMDGPUAttrDefs.td)
 mlir_tablegen(TritonAMDGPUEnums.h.inc -gen-enum-decls)
@@ -16,3 +30,16 @@ mlir_tablegen(TritonAMDGPUEnums.cpp.inc -gen-enum-defs)
 mlir_tablegen(TritonAMDGPUAttrDefs.h.inc -gen-attrdef-decls)
 mlir_tablegen(TritonAMDGPUAttrDefs.cpp.inc -gen-attrdef-defs)
 add_public_tablegen_target(TritonAMDGPUAttrDefsIncGen)
+add_custom_target(TritonAMDGPUAttrDefsIncGenCustomTarget
+                  COMMAND /bin/true
+                  DEPENDS
+                  TritonAMDGPUEnums.h.inc
+                  TritonAMDGPUEnums.cpp.inc
+                  TritonAMDGPUAttrDefs.h.inc
+                  TritonAMDGPUAttrDefs.cpp.inc
+                  BYPRODUCTS
+                  TritonAMDGPUEnums.h.inc
+                  TritonAMDGPUEnums.cpp.inc
+                  TritonAMDGPUAttrDefs.h.inc
+                  TritonAMDGPUAttrDefs.cpp.inc)
+

@@ -106,7 +106,7 @@ def TTG_AsyncCopyGlobalToLocalOp : TTG_Op<"async_copy_global_to_local", [
       OpBuilder<(ins "Value":$src, "Value":$result,
                      "triton::CacheModifier":$cache,
                      "triton::EvictionPolicy":$evict, "bool":$isVolatile),
-                 [{ noOpBuild($_builder, $_state, result, src, cache, evict, isVolatile); }]>
+                 [{ build($_builder, $_state, result, src, cache, evict, isVolatile); }]>
   ];
 
   let results = (outs TTG_AsyncToken:$token);
@@ -118,9 +118,6 @@ def TTG_AsyncCopyGlobalToLocalOp : TTG_Op<"async_copy_global_to_local", [
         validLoadBytes = {4, 8, 16};
       }
       return validLoadBytes;
-    }
-
-    static void noOpBuild(::mlir::OpBuilder &odsBuilder, ::mlir::OperationState &odsState, Value src, Value result, triton::CacheModifier cache, triton::EvictionPolicy evict, bool isVolatile) {
     }
   }];
 
@@ -364,16 +361,10 @@ def TTG_MaskOp: TTG_Op<"mask",
     let arguments = (ins I1:$pred);
     let results = (outs Variadic<AnyType>:$result);
     let regions = (region SizedRegion<1>:$region);
-
     let builders = [
         OpBuilder<(ins "Value":$pred),
-              [{ noOpBuild($_builder, $_state, pred); }]>
+              [{ build($_builder, $_state, pred); }]>
     ];
-
-    let extraClassDeclaration = [{
-      static void noOpBuild(::mlir::OpBuilder &odsBuilder, ::mlir::OperationState &odsState, Value pred) {
-      }
-    }];
 }
 
 def TTG_MaskReturnOp: TTG_Op<"mask.return",

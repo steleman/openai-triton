@@ -25,3 +25,19 @@ mlir_tablegen(OpInterfaces.h.inc -gen-op-interface-decls)
 mlir_tablegen(OpInterfaces.cpp.inc -gen-op-interface-defs)
 
 add_public_tablegen_target(TritonTableGen)
+add_custom_target(TritonTableGenCustomTarget
+                  COMMAND /bin/true
+                  DEPENDS
+                  Ops.h.inc Ops.cpp.inc
+                  OpsEnums.h.inc OpsEnums.cpp.inc
+                  Dialect.h.inc Dialect.cpp.inc
+                  Types.h.inc Types.cpp.inc
+                  AttrInterfaces.h.inc AttrInterfaces.cpp.inc
+                  OpInterfaces.h.inc OpInterfaces.cpp.inc
+                  BYPRODUCTS
+                  Ops.h.inc Ops.cpp.inc
+                  OpsEnums.h.inc OpsEnums.cpp.inc
+                  Dialect.h.inc Dialect.cpp.inc
+                  Types.h.inc Types.cpp.inc
+                  AttrInterfaces.h.inc AttrInterfaces.cpp.inc
+                  OpInterfaces.h.inc OpInterfaces.cpp.inc)

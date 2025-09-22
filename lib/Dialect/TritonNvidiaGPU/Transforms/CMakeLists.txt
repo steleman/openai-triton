@@ -12,7 +12,7 @@ add_triton_library(TritonNvidiaGPUTransforms
   TMAUtilities.cpp
 
   DEPENDS
-  TritonNvidiaGPUTransformsIncGen
+  TritonNvidiaGPUTransformsIncGenCustomTarget
 
   LINK_LIBS PUBLIC
   TritonIR

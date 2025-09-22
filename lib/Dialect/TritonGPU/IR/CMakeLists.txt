@@ -6,9 +6,24 @@ add_triton_library(TritonGPUIR
   Types.cpp
 
   DEPENDS
-  TritonGPUTableGen
-  TritonGPUAttrDefsIncGen
-  TritonGPUTypeInterfacesIncGen
+  TritonGPUTableGenCustomTarget
+  TritonGPUAttrDefsIncGenCustomTarget
+  TritonGPUTypeInterfacesIncGenCustomTarget
+  TritonNvidiaGPUTableGenCustomTarget
+  TritonNvidiaGPUAttrDefsIncGenCustomTarget
+  TritonNvidiaGPUOpInterfacesIncGenCustomTarget
+  NVHopperTransformsIncGenCustomTarget
+  NVWSTableGenCustomTarget
+  NVWSAttrDefsIncGenCustomTarget
+  NVWSTransformsIncGenCustomTarget
+  NVGPUTableGenCustomTarget
+  NVGPUAttrDefsIncGenCustomTarget
+  NVGPUConversionPassIncGenCustomTarget
+  TritonNVIDIAGPUConversionPassIncGenCustomTarget
+  TritonAMDGPUTableGenCustomTarget
+  TritonAMDGPUAttrDefsIncGenCustomTarget
+  TritonAMDGPUTransformsIncGenCustomTarget
+  TritonAMDGPUConversionPassIncGenCustomTarget
 
   LINK_LIBS PUBLIC
   MLIRGPUDialect

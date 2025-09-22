@@ -9,6 +9,9 @@ endif()
 include(ExternalProject)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_EXTENSIONS ON)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_EXTENSIONS ON)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
@@ -18,11 +21,11 @@ include(CTest)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Options
-option(TRITON_BUILD_PYTHON_MODULE "Build Python Triton bindings" OFF)
+option(TRITON_BUILD_PYTHON_MODULE "Build Python Triton bindings" ON)
 option(TRITON_BUILD_PROTON "Build the Triton Proton profiler" ON)
 option(TRITON_BUILD_UT "Build C++ Triton Unit Tests" ON)
-option(TRITON_BUILD_WITH_CCACHE "Build with ccache (if available)" ON)
-set(TRITON_CODEGEN_BACKENDS "" CACHE STRING "Enable different codegen backends")
+option(TRITON_BUILD_WITH_CCACHE "Build with ccache (if available)" OFF)
+set(TRITON_CODEGEN_BACKENDS amd nvidia)
 
 if(TRITON_BUILD_WITH_CCACHE)
   find_program(CCACHE_PROGRAM ccache)
@@ -32,8 +35,7 @@ if(TRITON_BUILD_WITH_CCACHE)
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}"
         CACHE STRING "CXX compiler launcher")
   else()
-    message(
-      STATUS
+    message(STATUS
         "Could not find ccache. Consider installing ccache to speed up compilation."
     )
   endif()
@@ -56,6 +58,10 @@ if(NOT MSVC)
   set(CMAKE_CXX_FLAGS_TRITONRELBUILDWITHASSERTS "-O2 -g")
   set(CMAKE_C_FLAGS_TRITONBUILDWITHO1 "-O1")
   set(CMAKE_CXX_FLAGS_TRITONBUILDWITHO1 "-O1")
+  set(CMAKE_C_FLAGS "-Wall -Wextra")
+  set(CMAKE_CXX_FLAGS "-Wall -Wextra")
+  set(CMAKE_C_FLAGS_RELEASE "-Wall -Wextra")
+  set(CMAKE_CXX_FLAGS_RELEASE "-Wall -Wextra")
 else()
   set(CMAKE_C_FLAGS_TRITONRELBUILDWITHASSERTS "/Zi /RTC1 /bigobj /Zc:preprocessor /permissive-")
   set(CMAKE_CXX_FLAGS_TRITONRELBUILDWITHASSERTS "/Zi /RTC1 /bigobj /Zc:preprocessor /permissive-")
@@ -84,6 +90,10 @@ endif()
 # Compiler flags
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 if(NOT MSVC)
+  add_definitions("-D__STDC_CONSTANT_MACROS")
+  add_definitions("-D__STDC_FORMAT_MACROS")
+  add_definitions("-D__STDC_LIMIT_MACROS")
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__STDC_FORMAT_MACROS  -fPIC -std=gnu++17")
 else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__STDC_FORMAT_MACROS")
@@ -106,6 +116,35 @@ list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 include(TableGen) # required by AddMLIR
 include(AddLLVM)
 include(AddMLIR)
+
+add_compile_options("-I${CMAKE_INSTALL_PREFIX}/include")
+
+foreach(CODEGEN_BACKEND ${TRITON_CODEGEN_BACKENDS})
+  message(STATUS "Codegen Backend: ${CODEGEN_BACKEND}")
+  if ("${CODEGEN_BACKEND}" STREQUAL "nvidia")
+    message(STATUS "Adding -I${CUDA_INCLUDE_DIR}")
+    add_compile_options("-I${CUDA_INCLUDE_DIR}")
+
+    message(STATUS "Adding -I${CUPTI_INCLUDE_DIR}")
+    add_compile_options("-I${CUPTI_INCLUDE_DIR}")
+
+    add_link_options("-Wl,-L${CUDA_LIBRARY_DIR}")
+    add_link_options("-Wl,-rpath,${CUDA_LIBRARY_DIR}")
+    add_link_options("-Wl,-L${CUPTI_LIB_DIR}")
+    add_link_options("-Wl,-rpath,${CUPTI_LIB_DIR}")
+  elseif ("${CODEGEN_BACKEND}" STREQUAL "amd")
+    message(STATUS "Adding -I${ROCM_INCLUDE_DIR}")
+    add_compile_options("-I${ROCM_INCLUDE_DIR}")
+
+    message(STATUS "Adding -I${ROCTRACER_INCLUDE_DIR}")
+    add_compile_options("-I${ROCTRACER_INCLUDE_DIR}")
+
+    add_link_options("-Wl,-L${ROCM_LIBRARY_DIR}")
+    add_link_options("-Wl,-rpath,${ROCM_LIBRARY_DIR}")
+    add_link_options("-Wl,-L${ROCTRACER_LIB_DIR}")
+    add_link_options("-Wl,-rpath,${ROCTRACER_LIB_DIR}")
+  endif()
+endforeach()
 
 # Utilities
 function(add_triton_object name)
@@ -135,14 +174,18 @@ endfunction()
 
 set_property(GLOBAL PROPERTY TRITON_PLUGINS "")
 function(add_triton_plugin name)
-  set_property(GLOBAL APPEND PROPERTY TRITON_PLUGINS ${name})
-  add_triton_object(${name} ${ARGN})
+  if (NOT ${name} STREQUAL "")
+    set_property(GLOBAL APPEND PROPERTY TRITON_PLUGINS ${name})
+    add_triton_object(${name} ${ARGN})
+  endif()
 endfunction()
 
 
 # Disable warnings that show up in external code (gtest;pybind11)
-if(NOT MSVC)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-covered-switch-default -fvisibility=hidden")
+if (NOT MSVC)
+  if (NOT ${CMAKE_COMPILER_ID} MATCHES "Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-covered-switch-default")
+  endif()
 else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4244 /wd4624 /wd4715 /wd4530")
 endif()
@@ -162,7 +205,7 @@ add_subdirectory(lib)
 # TODO: Figure out which target is sufficient to fix errors; triton is
 # apparently not enough. Currently set linking libstdc++fs for all targets
 # to support some old version GCC compilers like 8.3.0.
-if (NOT WIN32 AND NOT APPLE AND NOT BSD)
+if (NOT WIN32 AND NOT APPLE AND NOT BSD AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
   link_libraries(stdc++fs)
 endif()
 
@@ -178,6 +221,10 @@ if(TRITON_BUILD_PYTHON_MODULE)
   # Python Interpreter is used to run lit tests
   find_package(Python3 REQUIRED COMPONENTS Development.Module Interpreter)
   find_package(pybind11 CONFIG REQUIRED HINTS "${Python3_SITELIB}")
+
+  message(STATUS "Python3_INCLUDE_DIRS: ${Python3_INCLUDE_DIRS}")
+
+  add_compile_options("-I${Python3_INCLUDE_DIRS}")
 
   if (DEFINED TRITON_PLUGIN_DIRS)
     foreach(PLUGIN_DIR ${TRITON_PLUGIN_DIRS})
@@ -197,18 +244,24 @@ if(TRITON_BUILD_PYTHON_MODULE)
   endif()
 
   foreach(CODEGEN_BACKEND ${TRITON_CODEGEN_BACKENDS})
+    message(STATUS "Adding subdirectory ${CODEGEN_BACKEND}")
     add_subdirectory(third_party/${CODEGEN_BACKEND})
   endforeach()
 
   if (TRITON_BUILD_PROTON)
     add_subdirectory(third_party/proton)
   endif()
+
   # We always build proton dialect
   list(APPEND TRITON_PLUGIN_NAMES "proton")
   add_subdirectory(third_party/proton/dialect)
 
   get_property(triton_libs GLOBAL PROPERTY TRITON_LIBS)
   get_property(triton_plugins GLOBAL PROPERTY TRITON_PLUGINS)
+
+  message(STATUS "TRITON_LIBS: ${TRITON_LIBS}")
+  message(STATUS "TRITON_PLUGINS: ${TRITON_PLUGINS}")
+
   set(TRITON_LIBRARIES
     ${triton_libs}
     ${triton_plugins}
@@ -295,7 +348,14 @@ if(TRITON_BUILD_PYTHON_MODULE)
   else()
     target_link_libraries(triton PRIVATE z)
   endif()
-  target_link_options(triton PRIVATE ${LLVM_LDFLAGS})
+
+  if (NOT ${LLVM_LDFLAGS} STREQUAL "")
+    message(STATUS "LLVM_LDFLAGS: ${LLVM_LDFLAGS}")
+    target_link_options(triton PRIVATE ${LLVM_LDFLAGS})
+  endif()
+
+  message(STATUS "LLVM_SYSPATH: ${LLVM_SYSPATH}")
+  message(STATUS "TRITON_WHEEL_DIR: ${TRITON_WHEEL_DIR}")
 
   if (NOT DEFINED LLVM_SYSPATH)
       message(FATAL_ERROR "LLVM_SYSPATH must be set.")
@@ -305,15 +365,14 @@ if(TRITON_BUILD_PYTHON_MODULE)
       message(FATAL_ERROR "TRITON_WHEEL_DIR must be set.")
   endif()
 
-  configure_file(
-    "${LLVM_SYSPATH}/bin/FileCheck"
-    "${TRITON_WHEEL_DIR}/FileCheck"
+  configure_file("${LLVM_SYSPATH}/bin/llvm-lit"
+                 "${TRITON_WHEEL_DIR}/bin/llvm-lit"
     COPYONLY)
-
 endif()
 
 if (UNIX AND NOT APPLE)
-  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--exclude-libs,ALL")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--as-needed")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--as-needed")
 endif()
 
 if(TRITON_BUILD_PYTHON_MODULE AND NOT WIN32)
@@ -324,7 +383,10 @@ if(TRITON_BUILD_PYTHON_MODULE AND NOT WIN32)
     set(PYTHON_LDFLAGS "-undefined dynamic_lookup")
   endif()
 
-  target_link_options(triton PRIVATE ${PYTHON_LDFLAGS})
+  if (NOT ${PYTHON_LDFLAGS} STREQUAL "")
+    message(STATUS "PYTHON_LDFLAGS: ${PYTHON_LDFLAGS}")
+    target_link_options(triton PRIVATE ${PYTHON_LDFLAGS})
+  endif()
 endif()
 
 if(NOT TRITON_BUILD_PYTHON_MODULE)
@@ -349,3 +411,4 @@ if(TRITON_BUILD_UT)
     USES_TERMINAL
   )
 endif()
+

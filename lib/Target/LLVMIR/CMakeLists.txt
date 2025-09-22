@@ -3,7 +3,7 @@ add_triton_library(TritonLLVMIR
         LLVMIRBreakPhiStruct.cpp
 
         DEPENDS
-        LLVMIRIncGen
+        LLVMIRIncGenCustomTarget
 
         LINK_LIBS
         ${CMAKE_DL_LIBS}

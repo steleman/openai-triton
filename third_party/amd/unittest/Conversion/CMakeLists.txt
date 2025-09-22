@@ -5,6 +5,7 @@ add_triton_ut(
     TritonAnalysis
     TritonIR
     TritonGPUIR
+    TritonGPUTransforms
     TritonAMDGPUToLLVM
     MLIRUBToLLVM
     TritonAMDUtils

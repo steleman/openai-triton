@@ -1,0 +1,1558 @@
+--- cmake/FindCUPTI.cmake	2025-08-29 10:06:45.298978848 -0400
++++ cmake/FindCUPTI.cmake	2025-08-29 10:06:45.298978848 -0400
+@@ -0,0 +1,42 @@
++# Find CUPTI library/header
++
++if (UNIX AND NOT APPLE)
++  set(CUDA_TOOLKIT_ROOT_DIR "/usr/local/cuda-12")
++endif()
++
++find_path(CUPTI_PREFIX
++  NAMES include/cupti.h
++  HINTS
++  ${CUDA_TOOLKIT_ROOT_DIR}
++)
++
++find_library(CUPTI_LIBRARY
++  NAMES cupti
++  HINTS
++    ${CUPTI_PREFIX}/lib
++    ${CUDA_TOOLKIT_ROOT_DIR}/lib64
++    ${CUDA_TOOLKIT_ROOT_DIR}/lib
++    ${CUDA_TOOLKIT_ROOT_DIR}/extras/CUPTI/lib
++)
++
++find_path(CUPTI_INCLUDE_DIR
++  NAMES cupti.h
++  HINTS
++    ${CUPTI_PREFIX}/include
++    ${CUDA_TOOLKIT_ROOT_DIR}/include
++    ${CUDA_TOOLKIT_ROOT_DIR}/extras/CUPTI/include
++)
++
++include(FindPackageHandleStandardArgs)
++
++find_package_handle_standard_args(CUPTI
++  DEFAULT_MSG
++  CUPTI_LIBRARY
++  CUPTI_INCLUDE_DIR
++)
++
++mark_as_advanced(
++  CUPTI_INCLUDE_DIR
++  CUPTI_LIBRARY
++)
++
+--- cmake/FindROCTRACER.cmake	2025-08-29 10:06:45.299074824 -0400
++++ cmake/FindROCTRACER.cmake	2025-08-29 10:06:45.299074824 -0400
+@@ -0,0 +1,91 @@
++if (UNIX AND NOT APPLE)
++  if ("${ROCTRACER_PREFIX}" STREQUAL "")
++    set(ROCTRACER_PREFIX "/opt/rocm")
++  endif()
++endif()
++
++message(STATUS "ROCTRACER_PREFIX: ${ROCTRACER_PREFIX}")
++
++find_path(ROCTRACER_TOOLKIT
++  NAMES .info
++  HINTS ${ROCTRACER_PREFIX}
++  REQUIRED
++)
++
++message(STATUS "ROCTRACER_TOOLKIT: ${ROCTRACER_TOOLKIT}")
++
++find_path(ROCTRACER_INCLUDE_DIR
++  NAMES roctracer/roctracer_hip.h
++  HINTS ${ROCTRACER_TOOLKIT}/include
++        ${ROCTRACER_TOOLKIT}
++  # PATH_SUFFIXES roctracer
++  REQUIRED)
++
++mark_as_advanced(ROCTRACER_INCLUDE_DIR)
++message(STATUS "ROCTRACER_INCLUDE_DIR: ${ROCTRACER_INCLUDE_DIR}")
++
++find_path(ROCTRACER_HEADERS
++  NAMES roctracer.h
++  HINTS ${ROCTRACER_INCLUDE_DIR}/roctracer
++  REQUIRED)
++
++mark_as_advanced(ROCTRACER_HEADERS)
++message(STATUS "ROCTRACER_HEADERS: ${ROCTRACER_HEADERS}")
++
++find_library(ROCTRACER_LIBRARY
++  NAMES roctracer64
++  HINTS ${ROCTRACER_TOOLKIT}
++        ${ROCTRACER_TOOLKIT}/lib
++        ${ROCTRACER_TOOLKIT}/lib64
++  REQUIRED)
++
++mark_as_advanced(ROCTRACER_LIBRARY)
++message(STATUS "ROCTRACER_LIBRARY: ${ROCTRACER_LIBRARY}")
++
++if(ROCTRACER_INCLUDE_DIR)
++  file(READ "${ROCTRACER_INCLUDE_DIR}/roctracer/roctracer.h" header)
++  string(REGEX MATCH "#define ROCTRACER_VERSION_MAJOR [0-9]+" macroMajor "${header}")
++  string(REGEX MATCH "[0-9]+" versionMajor "${macroMajor}")
++  string(REGEX MATCH "#define ROCTRACER_VERSION_MINOR [0-9]+" macroMinor "${header}")
++  string(REGEX MATCH "[0-9]+" versionMinor "${macroMinor}")
++  set(ROCTRACER_VERSION "${versionMajor}.${versionMinor}")
++else()
++  message(FATAL_ERROR "Could not find ROCm's include directory.")
++endif()
++
++
++include(FindPackageHandleStandardArgs)
++find_package_handle_standard_args(ROCTRACER
++  FOUND_VAR ROCTRACER_FOUND
++  REQUIRED_VARS
++    ROCTRACER_TOOLKIT
++    ROCTRACER_INCLUDE_DIR
++    ROCTRACER_LIBRARY
++  VERSION_VAR ROCTRACER_VERSION
++)
++
++if(ROCTRACER_FOUND)
++  add_library(ROCTRACER::ROCTRACER UNKNOWN IMPORTED)
++  set_target_properties(ROCTRACER::ROCTRACER PROPERTIES
++    IMPORTED_LOCATION "${ROCTRACER_LIBRARY}")
++  target_include_directories(ROCTRACER::ROCTRACER INTERFACE "${ROCTRACER_INCLUDE_DIR}")
++
++  # In ROCm 5.1, ROCTRACER also requires the roctracer/ subdirectory to be
++  # available on the include paths. We use a compile test to determine if
++  # this is needed at all.
++  include(CheckIncludeFile)
++  check_include_file("roctracer/roctracer_hip.h" ROCTRACER_GOOD_HEADERS
++    CMAKE_REQUIRED_INCLUDES "${ROCTRACER_INCLUDE_DIR}")
++  if(NOT ROCTRACER_GOOD_HEADERS)
++    message(STATUS "Adding ${ROCTRACER_HEADERS} to include headers")
++    target_include_directories(ROCTRACER::ROCTRACER INTERFACE "${ROCTRACER_HEADERS}")
++  endif()
++endif()
++
++mark_as_advanced(
++  ROCTRACER_INCLUDE_DIR
++  ROCTRACER_HEADERS
++  ROCTRACER_LIBRARY
++  ROCTRACER_GOOD_HEADERS
++)
++
+--- CMakeLists.txt	2025-08-29 10:06:33.318281920 -0400
++++ CMakeLists.txt	2025-09-03 00:48:46.500781849 -0400
+@@ -9,6 +9,9 @@
+ include(ExternalProject)
+ 
+ set(CMAKE_CXX_STANDARD 17)
++set(CMAKE_CXX_EXTENSIONS ON)
++set(CMAKE_C_STANDARD 11)
++set(CMAKE_C_EXTENSIONS ON)
+ 
+ set(CMAKE_INCLUDE_CURRENT_DIR ON)
+ 
+@@ -18,11 +21,11 @@
+ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+ 
+ # Options
+-option(TRITON_BUILD_PYTHON_MODULE "Build Python Triton bindings" OFF)
++option(TRITON_BUILD_PYTHON_MODULE "Build Python Triton bindings" ON)
+ option(TRITON_BUILD_PROTON "Build the Triton Proton profiler" ON)
+ option(TRITON_BUILD_UT "Build C++ Triton Unit Tests" ON)
+-option(TRITON_BUILD_WITH_CCACHE "Build with ccache (if available)" ON)
+-set(TRITON_CODEGEN_BACKENDS "" CACHE STRING "Enable different codegen backends")
++option(TRITON_BUILD_WITH_CCACHE "Build with ccache (if available)" OFF)
++set(TRITON_CODEGEN_BACKENDS amd nvidia)
+ 
+ if(TRITON_BUILD_WITH_CCACHE)
+   find_program(CCACHE_PROGRAM ccache)
+@@ -32,8 +35,7 @@
+     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}"
+         CACHE STRING "CXX compiler launcher")
+   else()
+-    message(
+-      STATUS
++    message(STATUS
+         "Could not find ccache. Consider installing ccache to speed up compilation."
+     )
+   endif()
+@@ -56,6 +58,10 @@
+   set(CMAKE_CXX_FLAGS_TRITONRELBUILDWITHASSERTS "-O2 -g")
+   set(CMAKE_C_FLAGS_TRITONBUILDWITHO1 "-O1")
+   set(CMAKE_CXX_FLAGS_TRITONBUILDWITHO1 "-O1")
++  set(CMAKE_C_FLAGS "-Wall -Wextra")
++  set(CMAKE_CXX_FLAGS "-Wall -Wextra")
++  set(CMAKE_C_FLAGS_RELEASE "-Wall -Wextra")
++  set(CMAKE_CXX_FLAGS_RELEASE "-Wall -Wextra")
+ else()
+   set(CMAKE_C_FLAGS_TRITONRELBUILDWITHASSERTS "/Zi /RTC1 /bigobj /Zc:preprocessor /permissive-")
+   set(CMAKE_CXX_FLAGS_TRITONRELBUILDWITHASSERTS "/Zi /RTC1 /bigobj /Zc:preprocessor /permissive-")
+@@ -84,6 +90,10 @@
+ # Compiler flags
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+ if(NOT MSVC)
++  add_definitions("-D__STDC_CONSTANT_MACROS")
++  add_definitions("-D__STDC_FORMAT_MACROS")
++  add_definitions("-D__STDC_LIMIT_MACROS")
++  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__STDC_FORMAT_MACROS  -fPIC -std=gnu++17")
+ else()
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__STDC_FORMAT_MACROS")
+@@ -107,6 +117,35 @@
+ include(AddLLVM)
+ include(AddMLIR)
+ 
++add_compile_options("-I${CMAKE_INSTALL_PREFIX}/include")
++
++foreach(CODEGEN_BACKEND ${TRITON_CODEGEN_BACKENDS})
++  message(STATUS "Codegen Backend: ${CODEGEN_BACKEND}")
++  if ("${CODEGEN_BACKEND}" STREQUAL "nvidia")
++    message(STATUS "Adding -I${CUDA_INCLUDE_DIR}")
++    add_compile_options("-I${CUDA_INCLUDE_DIR}")
++
++    message(STATUS "Adding -I${CUPTI_INCLUDE_DIR}")
++    add_compile_options("-I${CUPTI_INCLUDE_DIR}")
++
++    add_link_options("-Wl,-L${CUDA_LIBRARY_DIR}")
++    add_link_options("-Wl,-rpath,${CUDA_LIBRARY_DIR}")
++    add_link_options("-Wl,-L${CUPTI_LIB_DIR}")
++    add_link_options("-Wl,-rpath,${CUPTI_LIB_DIR}")
++  elseif ("${CODEGEN_BACKEND}" STREQUAL "amd")
++    message(STATUS "Adding -I${ROCM_INCLUDE_DIR}")
++    add_compile_options("-I${ROCM_INCLUDE_DIR}")
++
++    message(STATUS "Adding -I${ROCTRACER_INCLUDE_DIR}")
++    add_compile_options("-I${ROCTRACER_INCLUDE_DIR}")
++
++    add_link_options("-Wl,-L${ROCM_LIBRARY_DIR}")
++    add_link_options("-Wl,-rpath,${ROCM_LIBRARY_DIR}")
++    add_link_options("-Wl,-L${ROCTRACER_LIB_DIR}")
++    add_link_options("-Wl,-rpath,${ROCTRACER_LIB_DIR}")
++  endif()
++endforeach()
++
+ # Utilities
+ function(add_triton_object name)
+   cmake_parse_arguments(ARG "" "" "DEPENDS;LINK_LIBS" ${ARGN})
+@@ -135,14 +174,18 @@
+ 
+ set_property(GLOBAL PROPERTY TRITON_PLUGINS "")
+ function(add_triton_plugin name)
++  if (NOT ${name} STREQUAL "")
+   set_property(GLOBAL APPEND PROPERTY TRITON_PLUGINS ${name})
+   add_triton_object(${name} ${ARGN})
++  endif()
+ endfunction()
+ 
+ 
+ # Disable warnings that show up in external code (gtest;pybind11)
+ if(NOT MSVC)
+-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-covered-switch-default -fvisibility=hidden")
++  if (NOT ${CMAKE_COMPILER_ID} MATCHES "Clang")
++    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-covered-switch-default")
++  endif()
+ else()
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4244 /wd4624 /wd4715 /wd4530")
+ endif()
+@@ -162,7 +205,7 @@
+ # TODO: Figure out which target is sufficient to fix errors; triton is
+ # apparently not enough. Currently set linking libstdc++fs for all targets
+ # to support some old version GCC compilers like 8.3.0.
+-if (NOT WIN32 AND NOT APPLE AND NOT BSD)
++if (NOT WIN32 AND NOT APPLE AND NOT BSD AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
+   link_libraries(stdc++fs)
+ endif()
+ 
+@@ -179,6 +222,10 @@
+   find_package(Python3 REQUIRED COMPONENTS Development.Module Interpreter)
+   find_package(pybind11 CONFIG REQUIRED HINTS "${Python3_SITELIB}")
+ 
++  message(STATUS "Python3_INCLUDE_DIRS: ${Python3_INCLUDE_DIRS}")
++
++  add_compile_options("-I${Python3_INCLUDE_DIRS}")
++
+   if (DEFINED TRITON_PLUGIN_DIRS)
+     foreach(PLUGIN_DIR ${TRITON_PLUGIN_DIRS})
+       # Read the plugin name under dir/backend/name.conf
+@@ -197,18 +244,24 @@
+   endif()
+ 
+   foreach(CODEGEN_BACKEND ${TRITON_CODEGEN_BACKENDS})
++    message(STATUS "Adding subdirectory ${CODEGEN_BACKEND}")
+     add_subdirectory(third_party/${CODEGEN_BACKEND})
+   endforeach()
+ 
+   if (TRITON_BUILD_PROTON)
+     add_subdirectory(third_party/proton)
+   endif()
++
+   # We always build proton dialect
+   list(APPEND TRITON_PLUGIN_NAMES "proton")
+   add_subdirectory(third_party/proton/dialect)
+ 
+   get_property(triton_libs GLOBAL PROPERTY TRITON_LIBS)
+   get_property(triton_plugins GLOBAL PROPERTY TRITON_PLUGINS)
++
++  message(STATUS "TRITON_LIBS: ${TRITON_LIBS}")
++  message(STATUS "TRITON_PLUGINS: ${TRITON_PLUGINS}")
++
+   set(TRITON_LIBRARIES
+     ${triton_libs}
+     ${triton_plugins}
+@@ -295,7 +348,14 @@
+   else()
+     target_link_libraries(triton PRIVATE z)
+   endif()
++
++  if (NOT ${LLVM_LDFLAGS} STREQUAL "")
++    message(STATUS "LLVM_LDFLAGS: ${LLVM_LDFLAGS}")
+   target_link_options(triton PRIVATE ${LLVM_LDFLAGS})
++  endif()
++
++  message(STATUS "LLVM_SYSPATH: ${LLVM_SYSPATH}")
++  message(STATUS "TRITON_WHEEL_DIR: ${TRITON_WHEEL_DIR}")
+ 
+   if (NOT DEFINED LLVM_SYSPATH)
+       message(FATAL_ERROR "LLVM_SYSPATH must be set.")
+@@ -305,15 +365,14 @@
+       message(FATAL_ERROR "TRITON_WHEEL_DIR must be set.")
+   endif()
+ 
+-  configure_file(
+-    "${LLVM_SYSPATH}/bin/FileCheck"
+-    "${TRITON_WHEEL_DIR}/FileCheck"
++  configure_file("${LLVM_SYSPATH}/bin/llvm-lit"
++                 "${TRITON_WHEEL_DIR}/bin/llvm-lit"
+     COPYONLY)
+-
+ endif()
+ 
+ if (UNIX AND NOT APPLE)
+-  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--exclude-libs,ALL")
++  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--as-needed")
++  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--as-needed")
+ endif()
+ 
+ if(TRITON_BUILD_PYTHON_MODULE AND NOT WIN32)
+@@ -324,8 +383,11 @@
+     set(PYTHON_LDFLAGS "-undefined dynamic_lookup")
+   endif()
+ 
++  if (NOT ${PYTHON_LDFLAGS} STREQUAL "")
++    message(STATUS "PYTHON_LDFLAGS: ${PYTHON_LDFLAGS}")
+   target_link_options(triton PRIVATE ${PYTHON_LDFLAGS})
+ endif()
++endif()
+ 
+ if(NOT TRITON_BUILD_PYTHON_MODULE)
+   foreach(CODEGEN_BACKEND ${TRITON_CODEGEN_BACKENDS})
+@@ -349,3 +411,4 @@
+     USES_TERMINAL
+   )
+ endif()
++
+--- cmake/nvidia-toolchain-version.json	2025-08-28 17:32:40.407037607 -0400
++++ cmake/nvidia-toolchain-version.json	2025-09-03 00:06:45.558279682 -0400
+@@ -1,8 +1,9 @@
+ {
+-  "ptxas": "12.8.93",
+-  "cuobjdump": "12.8.55",
+-  "nvdisasm": "12.8.55",
+-  "cudacrt": "12.8.61",
+-  "cudart": "12.8.57",
+-  "cupti": "12.8.90"
++  "ptxas": "12.9.86",
++  "cuobjdump": "12.9.82",
++  "nvdisasm": "12.9.88",
++  "nvcc": "12.9.86",
++  "cudacrt": "12.9.79",
++  "cudart": "12.9.79",
++  "cupti": "12.9.79"
+ }
+--- include/triton/Conversion/TritonGPUToLLVM/CMakeLists.txt	2025-08-28 17:32:40.421144008 -0400
++++ include/triton/Conversion/TritonGPUToLLVM/CMakeLists.txt	2025-08-29 10:06:45.300701360 -0400
+@@ -1,3 +1,8 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls --name TritonGPUToLLVM)
+ add_public_tablegen_target(TritonGPUConversionPassIncGen)
++add_custom_target(TritonGPUConversionPassIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS Passes.h.inc
++                  BYPRODUCTS Passes.h.inc)
++
+--- include/triton/Conversion/TritonToTritonGPU/CMakeLists.txt	2025-08-28 17:32:40.421144008 -0400
++++ include/triton/Conversion/TritonToTritonGPU/CMakeLists.txt	2025-08-29 10:06:45.300593347 -0400
+@@ -1,3 +1,8 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls --name TritonToTritonGPU)
+ add_public_tablegen_target(TritonConversionPassIncGen)
++add_custom_target(TritonConversionPassIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS Passes.h.inc
++                  BYPRODUCTS Passes.h.inc)
++
+--- include/triton/Dialect/TritonGPU/IR/CMakeLists.txt	2025-08-28 17:32:40.422074871 -0400
++++ include/triton/Dialect/TritonGPU/IR/CMakeLists.txt	2025-08-29 10:06:45.301191244 -0400
+@@ -1,4 +1,5 @@
+ set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
++set(MLIR_TBLGEN "${LLVM_BINDIR}/mlir-tblgen")
+ 
+ set(LLVM_TARGET_DEFINITIONS TritonGPUOps.td)
+ mlir_tablegen(Dialect.h.inc -gen-dialect-decls -dialect=ttg)
+@@ -10,6 +11,22 @@
+ add_mlir_doc(TritonGPUDialect TritonGPUDialect dialects/ -gen-dialect-doc)
+ add_mlir_doc(TritonGPUOps TritonGPUOps dialects/ -gen-op-doc)
+ add_public_tablegen_target(TritonGPUTableGen)
++add_custom_target(TritonGPUTableGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  Dialect.h.inc
++                  Dialect.cpp.inc
++                  Ops.h.inc
++                  Ops.cpp.inc
++                  Types.h.inc
++                  Types.cpp.inc
++                  BYPRODUCTS
++                  Dialect.h.inc
++                  Dialect.cpp.inc
++                  Ops.h.inc
++                  Ops.cpp.inc
++                  Types.h.inc
++                  Types.cpp.inc)
+ 
+ set(LLVM_TARGET_DEFINITIONS TritonGPUAttrDefs.td)
+ mlir_tablegen(AttrInterfaces.h.inc -gen-attr-interface-decls)
+@@ -19,8 +36,33 @@
+ mlir_tablegen(OpsEnums.h.inc -gen-enum-decls)
+ mlir_tablegen(OpsEnums.cpp.inc -gen-enum-defs)
+ add_public_tablegen_target(TritonGPUAttrDefsIncGen)
++add_custom_target(TritonGPUAttrDefsIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  AttrInterfaces.h.inc
++                  AttrInterfaces.cpp.inc
++                  AttrDefs.h.inc
++                  AttrDefs.cpp.inc
++                  OpsEnums.h.inc
++                  OpsEnums.cpp.inc
++                  BYPRODUCTS
++                  AttrInterfaces.h.inc
++                  AttrInterfaces.cpp.inc
++                  AttrDefs.h.inc
++                  AttrDefs.cpp.inc
++                  OpsEnums.h.inc
++                  OpsEnums.cpp.inc)
+ 
+ set(LLVM_TARGET_DEFINITIONS TritonGPUTypeInterfaces.td)
+ mlir_tablegen(TypeInterfaces.h.inc -gen-type-interface-decls)
+ mlir_tablegen(TypeInterfaces.cpp.inc -gen-type-interface-defs)
+ add_public_tablegen_target(TritonGPUTypeInterfacesIncGen)
++add_custom_target(TritonGPUTypeInterfacesIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  TypeInterfaces.h.inc
++                  TypeInterfaces.cpp.inc
++                  BYPRODUCTS
++                  TypeInterfaces.h.inc
++                  TypeInterfaces.cpp.inc)
++
+--- include/triton/Dialect/TritonGPU/IR/TritonGPUOps.td	2025-08-29 10:06:33.318523645 -0400
++++ include/triton/Dialect/TritonGPU/IR/TritonGPUOps.td	2025-09-03 10:55:40.199181439 -0400
+@@ -105,7 +105,8 @@
+   let builders = [
+       OpBuilder<(ins "Value":$src, "Value":$result,
+                      "triton::CacheModifier":$cache,
+-                     "triton::EvictionPolicy":$evict, "bool":$isVolatile)>,
++                     "triton::EvictionPolicy":$evict, "bool":$isVolatile),
++                 [{ noOpBuild($_builder, $_state, result, src, cache, evict, isVolatile); }]>
+   ];
+ 
+   let results = (outs TTG_AsyncToken:$token);
+@@ -118,6 +119,9 @@
+       }
+       return validLoadBytes;
+     }
++
++    static void noOpBuild(::mlir::OpBuilder &odsBuilder, ::mlir::OperationState &odsState, Value src, Value result, triton::CacheModifier cache, triton::EvictionPolicy evict, bool isVolatile) {
++    }
+   }];
+ 
+   // Specify cacheModifier and evictionPolicy explicitly, instead of leaving
+@@ -360,9 +364,16 @@
+     let arguments = (ins I1:$pred);
+     let results = (outs Variadic<AnyType>:$result);
+     let regions = (region SizedRegion<1>:$region);
++
+     let builders = [
+-        OpBuilder<(ins "Value":$pred)>,
++        OpBuilder<(ins "Value":$pred),
++              [{ noOpBuild($_builder, $_state, pred); }]>
+     ];
++
++    let extraClassDeclaration = [{
++      static void noOpBuild(::mlir::OpBuilder &odsBuilder, ::mlir::OperationState &odsState, Value pred) {
++      }
++    }];
+ }
+ 
+ def TTG_MaskReturnOp: TTG_Op<"mask.return",
+--- include/triton/Dialect/TritonGPU/Transforms/CMakeLists.txt	2025-08-28 17:32:40.422074871 -0400
++++ include/triton/Dialect/TritonGPU/Transforms/CMakeLists.txt	2025-08-29 10:06:45.301056600 -0400
+@@ -1,3 +1,10 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls -name TritonGPU)
+ add_public_tablegen_target(TritonGPUTransformsIncGen)
++add_custom_target(TritonGPUTransformsIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  Passes.h.inc
++                  BYPRODUCTS
++                  Passes.h.inc)
++
+--- include/triton/Dialect/Triton/IR/CMakeLists.txt	2025-08-28 17:32:40.421652050 -0400
++++ include/triton/Dialect/Triton/IR/CMakeLists.txt	2025-08-29 10:06:45.300935332 -0400
+@@ -25,3 +25,19 @@
+ mlir_tablegen(OpInterfaces.cpp.inc -gen-op-interface-defs)
+ 
+ add_public_tablegen_target(TritonTableGen)
++add_custom_target(TritonTableGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  Ops.h.inc Ops.cpp.inc
++                  OpsEnums.h.inc OpsEnums.cpp.inc
++                  Dialect.h.inc Dialect.cpp.inc
++                  Types.h.inc Types.cpp.inc
++                  AttrInterfaces.h.inc AttrInterfaces.cpp.inc
++                  OpInterfaces.h.inc OpInterfaces.cpp.inc
++                  BYPRODUCTS
++                  Ops.h.inc Ops.cpp.inc
++                  OpsEnums.h.inc OpsEnums.cpp.inc
++                  Dialect.h.inc Dialect.cpp.inc
++                  Types.h.inc Types.cpp.inc
++                  AttrInterfaces.h.inc AttrInterfaces.cpp.inc
++                  OpInterfaces.h.inc OpInterfaces.cpp.inc)
+--- include/triton/Dialect/TritonNvidiaGPU/IR/CMakeLists.txt	2025-08-28 17:32:40.422916422 -0400
++++ include/triton/Dialect/TritonNvidiaGPU/IR/CMakeLists.txt	2025-08-29 10:06:45.301429026 -0400
+@@ -8,6 +8,18 @@
+ add_mlir_doc(TritonNvidiaGPUDialect TritonNvidiaGPUDialect dialects/ -gen-dialect-doc)
+ add_mlir_doc(TritonNvidiaGPUOps TritonNvidiaGPUOps dialects/ -gen-op-doc)
+ add_public_tablegen_target(TritonNvidiaGPUTableGen)
++add_custom_target(TritonNvidiaGPUTableGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  Dialect.h.inc
++                  Dialect.cpp.inc
++                  Ops.h.inc
++                  Ops.cpp.inc
++                  BYPRODUCTS
++                  Dialect.h.inc
++                  Dialect.cpp.inc
++                  Ops.h.inc
++                  Ops.cpp.inc)
+ 
+ set(LLVM_TARGET_DEFINITIONS TritonNvidiaGPUAttrDefs.td)
+ mlir_tablegen(TritonNvidiaGPUAttrDefs.h.inc -gen-attrdef-decls)
+@@ -15,8 +27,29 @@
+ mlir_tablegen(OpsEnums.h.inc -gen-enum-decls)
+ mlir_tablegen(OpsEnums.cpp.inc -gen-enum-defs)
+ add_public_tablegen_target(TritonNvidiaGPUAttrDefsIncGen)
++add_custom_target(TritonNvidiaGPUAttrDefsIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  TritonNvidiaGPUAttrDefs.h.inc
++                  TritonNvidiaGPUAttrDefs.cpp.inc
++                  OpsEnums.h.inc
++                  OpsEnums.cpp.inc
++                  BYPRODUCTS
++                  TritonNvidiaGPUAttrDefs.h.inc
++                  TritonNvidiaGPUAttrDefs.cpp.inc
++                  OpsEnums.h.inc
++                  OpsEnums.cpp.inc)
+ 
+ set(LLVM_TARGET_DEFINITIONS TritonNvidiaGPUOpInterfaces.td)
+ mlir_tablegen(TritonNvidiaGPUOpInterfaces.h.inc -gen-op-interface-decls)
+ mlir_tablegen(TritonNvidiaGPUOpInterfaces.cpp.inc -gen-op-interface-defs)
+ add_public_tablegen_target(TritonNvidiaGPUOpInterfacesIncGen)
++add_custom_target(TritonNvidiaGPUOpInterfacesIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  TritonNvidiaGPUOpInterfaces.h.inc
++                  TritonNvidiaGPUOpInterfaces.cpp.inc
++                  BYPRODUCTS
++                  TritonNvidiaGPUOpInterfaces.h.inc
++                  TritonNvidiaGPUOpInterfaces.cpp.inc)
++
+--- include/triton/Dialect/TritonNvidiaGPU/IR/Dialect.h	2025-08-29 10:06:33.318523645 -0400
++++ include/triton/Dialect/TritonNvidiaGPU/IR/Dialect.h	2025-08-29 12:28:13.404340026 -0400
+@@ -50,7 +50,8 @@
+ 
+ struct TMemAllocation {
+   TMemAllocation(int numCols, int numRows)
+-      : numCols(numCols), numRows(numRows) {}
++  : numRows(numRows), numCols(numCols) {}
++
+   int numRows;
+   int numCols;
+ };
+--- include/triton/Dialect/TritonNvidiaGPU/Transforms/CMakeLists.txt	2025-08-28 17:32:40.422933622 -0400
++++ include/triton/Dialect/TritonNvidiaGPU/Transforms/CMakeLists.txt	2025-08-29 10:06:45.301307511 -0400
+@@ -1,3 +1,8 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls -name TritonNvidiaGPU)
+ add_public_tablegen_target(TritonNvidiaGPUTransformsIncGen)
++add_custom_target(TritonNvidiaGPUTransformsIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS Passes.h.inc
++                  BYPRODUCTS Passes.h.inc)
++
+--- include/triton/Dialect/Triton/Transforms/CMakeLists.txt	2025-08-28 17:32:40.421965311 -0400
++++ include/triton/Dialect/Triton/Transforms/CMakeLists.txt	2025-08-29 10:06:45.300820000 -0400
+@@ -1,3 +1,8 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls -name Triton)
+ add_public_tablegen_target(TritonTransformsIncGen)
++add_custom_target(TritonTransformsIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS Passes.h.inc
++                  BYPRODUCTS Passes.h.inc)
++
+--- include/triton/Target/LLVMIR/CMakeLists.txt	2025-08-28 17:32:40.423283449 -0400
++++ include/triton/Target/LLVMIR/CMakeLists.txt	2025-08-29 10:06:45.301537066 -0400
+@@ -1,3 +1,8 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls -name LLVMIR)
+ add_public_tablegen_target(LLVMIRIncGen)
++add_custom_target(LLVMIRIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS Passes.h.inc
++                  BYPRODUCTS Passes.h.inc)
++
+--- lib/Analysis/CMakeLists.txt	2025-08-28 17:32:40.423559025 -0400
++++ lib/Analysis/CMakeLists.txt	2025-08-29 10:06:45.299236356 -0400
+@@ -6,10 +6,10 @@
+   Utility.cpp
+ 
+   DEPENDS
+-  TritonTableGen
+-  TritonGPUTableGen
+-  TritonGPUAttrDefsIncGen
+-  TritonGPUTypeInterfacesIncGen
++  TritonTableGenCustomTarget
++  TritonGPUTableGenCustomTarget
++  TritonGPUAttrDefsIncGenCustomTarget
++  TritonGPUTypeInterfacesIncGenCustomTarget
+ 
+   LINK_LIBS PUBLIC
+   MLIRAnalysis
+--- lib/Conversion/TritonGPUToLLVM/CMakeLists.txt	2025-08-29 10:06:33.318523645 -0400
++++ lib/Conversion/TritonGPUToLLVM/CMakeLists.txt	2025-08-29 10:06:45.299355999 -0400
+@@ -22,7 +22,7 @@
+     ViewOpToLLVM.cpp
+ 
+     DEPENDS
+-    TritonGPUConversionPassIncGen
++    TritonGPUConversionPassIncGenCustomTarget
+ 
+     LINK_LIBS PUBLIC
+     MLIRIR
+--- lib/Conversion/TritonGPUToLLVM/FuncOpToLLVM.cpp	2025-08-29 10:06:33.319523616 -0400
++++ lib/Conversion/TritonGPUToLLVM/FuncOpToLLVM.cpp	2025-09-02 11:22:30.405341877 -0400
+@@ -1,15 +1,10 @@
+-#include "mlir/Dialect/LLVMIR/NVVMDialect.h"
+-#include "mlir/IR/BuiltinAttributes.h"
++#include <mlir/Dialect/LLVMIR/NVVMDialect.h>
++#include <mlir/IR/BuiltinAttributes.h>
++#include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
++
+ #include "triton/Conversion/TritonGPUToLLVM/PatternTritonGPUOpToLLVM.h"
+ #include "triton/Conversion/TritonGPUToLLVM/Utility.h"
+ 
+-namespace mlir {
+-FailureOr<LLVM::LLVMFuncOp>
+-convertFuncOpToLLVMFuncOp(FunctionOpInterface funcOp,
+-                          ConversionPatternRewriter &rewriter,
+-                          const LLVMTypeConverter &converter);
+-}
+-
+ namespace {
+ 
+ using namespace mlir;
+--- lib/Dialect/TritonGPU/IR/CMakeLists.txt	2025-08-28 17:32:40.426099978 -0400
++++ lib/Dialect/TritonGPU/IR/CMakeLists.txt	2025-08-29 10:06:45.299871232 -0400
+@@ -6,9 +6,24 @@
+   Types.cpp
+ 
+   DEPENDS
+-  TritonGPUTableGen
+-  TritonGPUAttrDefsIncGen
+-  TritonGPUTypeInterfacesIncGen
++  TritonGPUTableGenCustomTarget
++  TritonGPUAttrDefsIncGenCustomTarget
++  TritonGPUTypeInterfacesIncGenCustomTarget
++  TritonNvidiaGPUTableGenCustomTarget
++  TritonNvidiaGPUAttrDefsIncGenCustomTarget
++  TritonNvidiaGPUOpInterfacesIncGenCustomTarget
++  NVHopperTransformsIncGenCustomTarget
++  NVWSTableGenCustomTarget
++  NVWSAttrDefsIncGenCustomTarget
++  NVWSTransformsIncGenCustomTarget
++  NVGPUTableGenCustomTarget
++  NVGPUAttrDefsIncGenCustomTarget
++  NVGPUConversionPassIncGenCustomTarget
++  TritonNVIDIAGPUConversionPassIncGenCustomTarget
++  TritonAMDGPUTableGenCustomTarget
++  TritonAMDGPUAttrDefsIncGenCustomTarget
++  TritonAMDGPUTransformsIncGenCustomTarget
++  TritonAMDGPUConversionPassIncGenCustomTarget
+ 
+   LINK_LIBS PUBLIC
+   MLIRGPUDialect
+--- lib/Dialect/TritonGPU/Transforms/CMakeLists.txt	2025-08-29 10:06:33.320523587 -0400
++++ lib/Dialect/TritonGPU/Transforms/CMakeLists.txt	2025-08-29 10:06:45.299743845 -0400
+@@ -38,7 +38,25 @@
+   WarpSpecialization/RewritePartitionDependencies.cpp
+ 
+   DEPENDS
+-  TritonGPUTransformsIncGen
++  TritonGPUTransformsIncGenCustomTarget
++  TritonGPUTableGenCustomTarget
++  TritonGPUAttrDefsIncGenCustomTarget
++  TritonGPUTypeInterfacesIncGenCustomTarget
++  TritonNvidiaGPUTableGenCustomTarget
++  TritonNvidiaGPUAttrDefsIncGenCustomTarget
++  TritonNvidiaGPUOpInterfacesIncGenCustomTarget
++  NVHopperTransformsIncGenCustomTarget
++  NVWSTableGenCustomTarget
++  NVWSAttrDefsIncGenCustomTarget
++  NVWSTransformsIncGenCustomTarget
++  NVGPUTableGenCustomTarget
++  NVGPUAttrDefsIncGenCustomTarget
++  NVGPUConversionPassIncGenCustomTarget
++  TritonNVIDIAGPUConversionPassIncGenCustomTarget
++  TritonAMDGPUTableGenCustomTarget
++  TritonAMDGPUAttrDefsIncGenCustomTarget
++  TritonAMDGPUTransformsIncGenCustomTarget
++  TritonAMDGPUConversionPassIncGenCustomTarget
+ 
+   LINK_LIBS PUBLIC
+   MLIRTransforms
+--- lib/Dialect/TritonGPU/Transforms/Pipeliner/SoftwarePipeliner.cpp	2025-08-29 10:06:33.321523558 -0400
++++ lib/Dialect/TritonGPU/Transforms/Pipeliner/SoftwarePipeliner.cpp	2025-08-29 13:50:33.007565842 -0400
+@@ -129,11 +129,11 @@
+       if (isEpilogue) {
+         // Return false for the predicate of the peeled iteration
+         return rewriter.create<mlir::arith::ConstantIntOp>(
+-            predOp.getLoc(), 0, predOp.getResult().getType());
++            predOp.getLoc(), predOp.getResult().getType(), 0L);
+       } else {
+         if (predOp.getStage() == predOp.getMaxStage() - 1) {
+           return rewriter.create<mlir::arith::ConstantIntOp>(
+-              predOp.getLoc(), 1, predOp.getResult().getType());
++              predOp.getLoc(), predOp.getResult().getType(), 1L);
+         } else {
+           OpBuilder::InsertionGuard guard(rewriter);
+           rewriter.setInsertionPoint(op);
+--- lib/Dialect/Triton/IR/CMakeLists.txt	2025-08-29 10:06:33.319523616 -0400
++++ lib/Dialect/Triton/IR/CMakeLists.txt	2025-08-29 10:06:45.299618908 -0400
+@@ -1,6 +1,10 @@
+ set(LLVM_TARGET_DEFINITIONS Canonicalize.td)
+ mlir_tablegen(TritonCanonicalize.inc -gen-rewriters)
+ add_public_tablegen_target(TritonCanonicalizeIncGen)
++add_custom_target(TritonCanonicalizeIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS TritonCanonicalize.inc
++                  BYPRODUCTS TritonCanonicalize.inc)
+ 
+ add_triton_library(TritonIR
+   Dialect.cpp
+@@ -11,8 +15,8 @@
+   Utility.cpp
+ 
+   DEPENDS
+-  TritonTableGen
+-  TritonCanonicalizeIncGen
++  TritonTableGenCustomTarget
++  TritonCanonicalizeIncGenCustomTarget
+ 
+   LINK_LIBS PUBLIC
+   MLIRIR
+--- lib/Dialect/TritonNvidiaGPU/IR/CMakeLists.txt	2025-08-28 17:32:40.428738040 -0400
++++ lib/Dialect/TritonNvidiaGPU/IR/CMakeLists.txt	2025-08-29 10:06:45.300115338 -0400
+@@ -1,12 +1,10 @@
+ add_triton_library(TritonNvidiaGPUIR
+   Dialect.cpp
+   Ops.cpp
+-
+   DEPENDS
+-  TritonNvidiaGPUTableGen
+-  TritonNvidiaGPUAttrDefsIncGen
+-  TritonNvidiaGPUOpInterfacesIncGen
+-
++  TritonNvidiaGPUTableGenCustomTarget
++  TritonNvidiaGPUAttrDefsIncGenCustomTarget
++  TritonNvidiaGPUOpInterfacesIncGenCustomTarget
+   LINK_LIBS PUBLIC
+   TritonIR
+   TritonGPUIR
+--- lib/Dialect/TritonNvidiaGPU/Transforms/CMakeLists.txt	2025-08-29 10:06:33.321523558 -0400
++++ lib/Dialect/TritonNvidiaGPU/Transforms/CMakeLists.txt	2025-08-29 10:06:45.299991587 -0400
+@@ -12,7 +12,7 @@
+   TMAUtilities.cpp
+ 
+   DEPENDS
+-  TritonNvidiaGPUTransformsIncGen
++  TritonNvidiaGPUTransformsIncGenCustomTarget
+ 
+   LINK_LIBS PUBLIC
+   TritonIR
+--- lib/Dialect/Triton/Transforms/CMakeLists.txt	2025-08-28 17:32:40.425804282 -0400
++++ lib/Dialect/Triton/Transforms/CMakeLists.txt	2025-08-29 10:06:45.299497667 -0400
+@@ -1,6 +1,10 @@
+ set(LLVM_TARGET_DEFINITIONS Combine.td)
+ mlir_tablegen(TritonCombine.inc -gen-rewriters)
+ add_public_tablegen_target(TritonCombineIncGen)
++add_custom_target(TritonCombineIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS TritonCombine.inc
++                  BYPRODUCTS TritonCombine.inc)
+ 
+ add_triton_library(TritonTransforms
+   Combine.cpp
+@@ -15,8 +19,8 @@
+   FunctionTypeConversion.cpp
+ 
+   DEPENDS
+-  TritonTransformsIncGen
+-  TritonCombineIncGen
++  TritonCombineIncGenCustomTarget
++  TritonTransformsIncGenCustomTarget
+ 
+   LINK_LIBS PUBLIC
+   MLIRPass
+--- lib/Dialect/Triton/Transforms/RewriteTensorDescriptorToPointer.cpp	2025-08-29 10:06:33.319523616 -0400
++++ lib/Dialect/Triton/Transforms/RewriteTensorDescriptorToPointer.cpp	2025-08-29 11:51:55.275101743 -0400
+@@ -165,7 +165,7 @@
+ 
+     // Compare with lower bound
+     Value lowerBound = builder.create<mlir::arith::ConstantIntOp>(
+-        loc, 0, builder.getI64Type());
++        loc, builder.getI64Type(), 0L);
+     Value splatLowerBound = builder.create<triton::SplatOp>(
+         loc, offsetRanges[i].getType(), lowerBound);
+     Value cmpLower = builder.create<arith::CmpIOp>(
+--- lib/Dialect/Triton/Transforms/RewriteTensorPointer.cpp	2025-08-29 10:06:33.319523616 -0400
++++ lib/Dialect/Triton/Transforms/RewriteTensorPointer.cpp	2025-08-29 10:57:32.933577666 -0400
+@@ -133,7 +133,7 @@
+ 
+       // Compare with lower bound
+       Value lowerBound = builder.create<mlir::arith::ConstantIntOp>(
+-          loc, 0, builder.getI64Type());
++          loc, builder.getI64Type(), 0L);
+       Value splatLowerBound = builder.create<triton::SplatOp>(
+           loc, offsetWithRange.getType(), lowerBound);
+       Value cmpLower = builder.create<arith::CmpIOp>(
+--- lib/Target/LLVMIR/CMakeLists.txt	2025-08-29 10:06:33.321523558 -0400
++++ lib/Target/LLVMIR/CMakeLists.txt	2025-08-29 10:06:45.300233779 -0400
+@@ -3,7 +3,7 @@
+         LLVMIRBreakPhiStruct.cpp
+ 
+         DEPENDS
+-        LLVMIRIncGen
++        LLVMIRIncGenCustomTarget
+ 
+         LINK_LIBS
+         ${CMAKE_DL_LIBS}
+--- Makefile	2025-08-29 10:06:33.318281920 -0400
++++ Makefile	2025-09-02 21:08:02.296580536 -0400
+@@ -13,21 +13,21 @@
+ 
+ .PHONY: all
+ all:
+-	ninja -C $(BUILD_DIR)
++	gmake -C $(BUILD_DIR)
+ 
+ .PHONY: triton-opt
+ triton-opt:
+-	ninja -C $(BUILD_DIR) triton-opt
++	gmake -C $(BUILD_DIR) triton-opt
+ 
+ # Testing
+ 
+ .PHONY: test-lit
+ test-lit:
+-	ninja -C $(BUILD_DIR) check-triton-lit-tests
++	gmake -C $(BUILD_DIR) check-triton-lit-tests
+ 
+ .PHONY: test-cpp
+ test-cpp:
+-	ninja -C $(BUILD_DIR) check-triton-unit-tests
++	gmake -C $(BUILD_DIR) check-triton-unit-tests
+ 
+ .PHONY: test-unit
+ test-unit: all
+--- python/src/ir.cc	2025-08-29 10:06:33.322523529 -0400
++++ python/src/ir.cc	2025-09-01 12:36:29.256007895 -0400
+@@ -785,53 +785,53 @@
+       .def("get_int1",
+            [](TritonOpBuilder &self, bool v) -> Value {
+              return Value(self.create<arith::ConstantIntOp>(
+-                 v, self.getBuilder().getI1Type()));
++                 self.getBuilder().getI1Type(), int64_t(v)));
+            })
+       .def("get_int8",
+            [](TritonOpBuilder &self, int64_t v) -> Value {
+              return Value(self.create<arith::ConstantIntOp>(
+-                 v, self.getBuilder().getI8Type()));
++                 self.getBuilder().getI8Type(), v));
+            })
+       .def("get_int16",
+            [](TritonOpBuilder &self, int64_t v) -> Value {
+              return Value(self.create<arith::ConstantIntOp>(
+-                 v, self.getBuilder().getI16Type()));
++                 self.getBuilder().getI16Type(), v));
+            })
+       .def("get_int32",
+            [](TritonOpBuilder &self, int64_t v) -> Value {
+              return Value(self.create<arith::ConstantIntOp>(
+-                 v, self.getBuilder().getI32Type()));
++                 self.getBuilder().getI32Type(), v));
+            })
+       .def("get_int64",
+            [](TritonOpBuilder &self, int64_t v) -> Value {
+              return Value(self.create<arith::ConstantIntOp>(
+-                 v, self.getBuilder().getI64Type()));
++                 self.getBuilder().getI64Type(), v));
+            })
+       .def("get_uint8",
+            [](TritonOpBuilder &self, uint64_t v) -> Value {
+              return Value(self.create<arith::ConstantIntOp>(
+-                 v, self.getBuilder().getI8Type()));
++                 self.getBuilder().getI8Type(), v));
+            })
+       .def("get_uint16",
+            [](TritonOpBuilder &self, uint64_t v) -> Value {
+              return Value(self.create<arith::ConstantIntOp>(
+-                 v, self.getBuilder().getI16Type()));
++                 self.getBuilder().getI16Type(), v));
+            })
+       .def("get_uint32",
+            [](TritonOpBuilder &self, uint64_t v) -> Value {
+              return Value(self.create<arith::ConstantIntOp>(
+-                 v, self.getBuilder().getI32Type()));
++                 self.getBuilder().getI32Type(), v));
+            })
+       .def("get_uint64",
+            [](TritonOpBuilder &self, uint64_t v) -> Value {
+              return Value(self.create<arith::ConstantIntOp>(
+-                 v, self.getBuilder().getI64Type()));
++                 self.getBuilder().getI64Type(), v));
+            })
+       .def("get_bf16",
+            [](TritonOpBuilder &self, float v) -> Value {
+              auto type = self.getBuilder().getBF16Type();
+              return self.create<arith::ConstantFloatOp>(
+-                 APFloat(type.getFloatSemantics(), std::to_string(v)), type);
++                 type, APFloat(type.getFloatSemantics(), std::to_string(v)));
+            })
+       .def("get_fp16",
+            [](TritonOpBuilder &self, float v) -> Value {
+@@ -852,9 +852,9 @@
+            [](TritonOpBuilder &self, Type type) -> Value {
+              if (auto floatTy = dyn_cast<FloatType>(type))
+                return self.create<arith::ConstantFloatOp>(
+-                   APFloat(floatTy.getFloatSemantics(), 0), floatTy);
++                   floatTy, APFloat(floatTy.getFloatSemantics(), 0));
+              else if (auto intTy = dyn_cast<IntegerType>(type))
+-               return self.create<arith::ConstantIntOp>(0, intTy);
++               return self.create<arith::ConstantIntOp>(intTy, 0);
+              else
+                throw std::runtime_error("Not implemented");
+            })
+@@ -862,7 +862,7 @@
+            [](TritonOpBuilder &self, Type type) -> Value {
+              uint64_t val = 0xFFFFFFFFFFFFFFFF;
+              if (auto intTy = dyn_cast<IntegerType>(type))
+-               return self.create<arith::ConstantIntOp>(val, intTy);
++               return self.create<arith::ConstantIntOp>(intTy, val);
+              else
+                throw std::runtime_error("Not implemented");
+            })
+--- python/src/llvm.cc	2025-08-29 10:06:33.322523529 -0400
++++ python/src/llvm.cc	2025-09-01 13:07:00.610150893 -0400
+@@ -129,7 +129,10 @@
+     llvm::dbgs() << reportStream.str();
+     timePassesStr.clear();
+   }
+-  // module->print(llvm::outs(), nullptr);
++
++#if defined(TRITON_DEBUG)
++  module->print(llvm::outs(), nullptr);
++#endif
+ 
+   // create machine
+   module.setTargetTriple(Triple(triple));
+@@ -160,7 +163,6 @@
+ using ret = py::return_value_policy;
+ 
+ void init_triton_llvm(py::module &&m) {
+-
+   py::class_<llvm::LLVMContext>(m, "context", py::module_local())
+       .def(py::init<>());
+   py::class_<llvm::SourceMgr>(m, "source_mgr", py::module_local())
+@@ -279,15 +281,19 @@
+     if (!target) {
+       throw std::runtime_error("target lookup error: " + error);
+     }
++
++    llvm::Triple TT(triple);
+     llvm::TargetOptions opt;
++
+     // Target machine is only used to create the data layout.
+     std::unique_ptr<llvm::TargetMachine> machine{target->createTargetMachine(
+-        llvm::Triple(triple), proc, features, opt, llvm::Reloc::PIC_,
+-        std::nullopt, llvm::CodeGenOptLevel::None)};
++        TT, proc, features, opt, llvm::Reloc::PIC_, std::nullopt,
++        llvm::CodeGenOptLevel::None)};
+     // set data layout
+     mod->setDataLayout(machine->createDataLayout());
+   });
+ 
++
+   m.def(
+       "optimize_module",
+       [](llvm::Module *mod, const llvm::OptimizationLevel &opt,
+@@ -310,6 +316,7 @@
+             }
+           }
+         }
++
+         using namespace llvm;
+         LoopAnalysisManager lam;
+         FunctionAnalysisManager fam;
+@@ -317,7 +324,7 @@
+         ModuleAnalysisManager mam;
+ 
+         if (arch.empty()) {
+-          llvm::TargetLibraryInfoImpl TLII;
++          llvm::TargetLibraryInfoImpl TLII(mod->getTargetTriple());
+           TLII.disableAllFunctions();
+           fam.registerPass([TLII = std::move(TLII)] {
+             return llvm::TargetLibraryAnalysis(TLII);
+--- setup.py	2025-08-29 10:06:33.326523412 -0400
++++ setup.py	2025-09-03 07:05:10.150800405 -0400
+@@ -138,8 +138,7 @@
+     elif check_env_flag("TRITON_BUILD_WITH_O1"):
+         return "TritonBuildWithO1"
+     else:
+-        # TODO: change to release when stable enough
+-        return "TritonRelBuildWithAsserts"
++        return "Release"
+ 
+ 
+ def get_env_with_keys(key: list):
+@@ -437,8 +436,11 @@
+         return cmake_args
+ 
+     def build_extension(self, ext):
+-        lit_dir = shutil.which('lit')
+-        ninja_dir = shutil.which('ninja')
++        lit_dir = get_env_with_keys(["LLVM_EXTERNAL_LIT"])
++        if lit_dir == "":
++            lit_dir = shutil.which('llvm-lit')
++
++        gmake_dir = shutil.which('gmake')
+         # lit is used by the test suite
+         thirdparty_cmake_args = get_thirdparty_packages([get_llvm_package_info()])
+         thirdparty_cmake_args += self.get_pybind11_cmake_args()
+@@ -450,16 +452,41 @@
+             os.makedirs(self.build_temp)
+         # python directories
+         python_include_dir = sysconfig.get_path("platinclude")
++
++        for be in backends:
++             print("enabling backend: " + str(be))
++
+         cmake_args = [
+-            "-G", "Ninja",  # Ninja is much faster than make
+-            "-DCMAKE_MAKE_PROGRAM=" +
+-            ninja_dir,  # Pass explicit path to ninja otherwise cmake may cache a temporary path
+-            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON", "-DLLVM_ENABLE_WERROR=ON",
+-            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=" + extdir, "-DTRITON_BUILD_PYTHON_MODULE=ON",
+-            "-DPython3_EXECUTABLE:FILEPATH=" + sys.executable, "-DPython3_INCLUDE_DIR=" + python_include_dir,
++            "-G", "Unix Makefiles",
++            "-DCMAKE_BUILD_TYPE:STRING=" + os.getenv("BUILD_TYPE", "Release"),
++            "-DCMAKE_C_COMPILER:FILEPATH=" + os.getenv("CC", "/usr/bin/gcc"),
++            "-DCMAKE_CXX_COMPILER:FILEPATH=" + os.getenv("CXX", "/usr/bin/g++"),
++            "-DCMAKE_C_FLAGS:STRING=" + os.getenv("CFLAGS", "-O2 -std=gnu11"),
++            "-DCMAKE_CXX_FLAGS:STRING=" + os.getenv("CXXFLAGS", "-O2 -std=gnu++17"),
++            "-DCMAKE_VERBOSE_MAKEFILE:BOOL=ON",
++            "-DCMAKE_MAKE_PROGRAM=" + gmake_dir,
++            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
++            "-DCMAKE_BUILD_RPATH:STRING=" + os.getenv("RUNPATH", ""),
++            "-DCMAKE_INSTALL_RPATH:STRING=" + os.getenv("RUNPATH", ""),
++						"-DLLVM_ENABLE_WERROR=ON",
++            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=" + extdir,
++						"-DTRITON_BUILD_PYTHON_MODULE=ON",
++            "-DPython3_EXECUTABLE:FILEPATH=" + sys.executable,
++						"-DPython3_INCLUDE_DIR=" + python_include_dir,
+             "-DTRITON_CODEGEN_BACKENDS=" + ';'.join([b.name for b in backends if not b.is_external]),
+             "-DTRITON_PLUGIN_DIRS=" + ';'.join([b.src_dir for b in backends if b.is_external]),
+-            "-DTRITON_WHEEL_DIR=" + wheeldir
++            "-DTRITON_WHEEL_DIR=" + wheeldir,
++            "-DROCTRACER_PREFIX=" + os.getenv("ROCTRACER_PREFIX", "/opt/rocm-6.4.3"),
++            "-DCUDA_INCLUDE_DIR=" + os.getenv("CUDA_INCLUDE_DIR", "/usr/local/cuda-12.9/include"),
++            "-DCUDA_LIBRARY_DIR=" + os.getenv("CUDA_LIBRARY_DIR", "/usr/local/cuda-12.9/lib64"),
++						"-DCUPTI_INCLUDE_DIR=" + os.getenv("CUPTI_INCLUDE_DIR", "/usr/local/cuda-12.9/targets/x86_64-linux/include"),
++						"-DCUPTI_LIB_DIR=" + os.getenv("CUPTI_LIB_DIR", "/usr/local/cuda-12.9/targets/x86_64-linux/lib"),
++						"-DROCM_INCLUDE_DIR=" + os.getenv("ROCM_INCLUDE_DIR", "/opt/rocm-6.4.3/include"),
++						"-DROCM_LIBRARY_DIR=" + os.getenv("ROCM_LIBRARY_DIR", "/opt/rocm-6.4.3/lib"),
++						"-DLLVM_CMAKE_DIR=" + os.getenv("LLVM_CMAKE_DIR", "/opt/triton/lib64/cmake/llvm"),
++						"-DMLIR_DIR=" + os.getenv("MLIR_DIR", "/opt/triton/lib64/cmake/mlir"),
++						"-DMLIR_CMAKE_DIR=" + os.getenv("MLIR_CMAKE_DIR", "/opt/triton/lib64/cmake/mlir"),
++						"-DLLVM_EXTERNAL_LIT=" + os.getenv("LLVM_EXTERNAL_LIT", "/opt/triton/bin/llvm-lit"),
+         ]
+         if lit_dir is not None:
+             cmake_args.append("-DLLVM_EXTERNAL_LIT=" + lit_dir)
+@@ -478,12 +505,8 @@
+ 
+         if check_env_flag("TRITON_BUILD_WITH_CLANG_LLD"):
+             cmake_args += [
+-                "-DCMAKE_C_COMPILER=clang",
+-                "-DCMAKE_CXX_COMPILER=clang++",
+-                "-DCMAKE_LINKER=lld",
+-                "-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld",
+-                "-DCMAKE_MODULE_LINKER_FLAGS=-fuse-ld=lld",
+-                "-DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld",
++                "-DCMAKE_C_COMPILER=/usr/bin/gcc",
++                "-DCMAKE_CXX_COMPILER=/usr/bin/g++",
+             ]
+ 
+         # Note that asan doesn't work with binaries that use the GPU, so this is
+@@ -521,7 +544,11 @@
+ 
+         env = os.environ.copy()
+         cmake_dir = get_cmake_dir()
++        print("pwd: " + os.getcwd())
++
+         subprocess.check_call(["cmake", self.base_dir] + cmake_args, cwd=cmake_dir, env=env)
++        subprocess.call(['sh', './fix-bad-compile-flags.sh'])
++        subprocess.call(['sh', './fix-bad-link-flags.sh'])
+         subprocess.check_call(["cmake", "--build", "."] + build_args, cwd=cmake_dir)
+         subprocess.check_call(["cmake", "--build", ".", "--target", "mlir-doc"], cwd=cmake_dir)
+ 
+@@ -531,6 +558,10 @@
+     with open(nvidia_version_path, "r") as nvidia_version_file:
+         # parse this json file to get the version of the nvidia toolchain
+         NVIDIA_TOOLCHAIN_VERSION = json.load(nvidia_version_file)
++        print("NVIDIA_TOOLCHAIN_VERSION: " + str(NVIDIA_TOOLCHAIN_VERSION))
++        print("system: {system}")
++        print("arch: {arch}")
++        print("version: {version}")
+ 
+     exe_extension = sysconfig.get_config_var("EXE")
+     download_and_copy(
+--- third_party/amd/include/Dialect/TritonAMDGPU/IR/CMakeLists.txt	2025-08-28 17:32:40.453043139 -0400
++++ third_party/amd/include/Dialect/TritonAMDGPU/IR/CMakeLists.txt	2025-08-29 10:06:45.298352903 -0400
+@@ -9,6 +9,20 @@
+ add_mlir_doc(TritonAMDGPUDialect TritonAMDGPUDialect dialects/ -gen-dialect-doc)
+ add_mlir_doc(TritonAMDGPUOps TritonAMDGPUOps dialects/ -gen-op-doc)
+ add_public_tablegen_target(TritonAMDGPUTableGen)
++add_custom_target(TritonAMDGPUTableGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  Dialect.h.inc
++                  Dialect.cpp.inc
++                  OpsConversions.inc
++                  Ops.h.inc
++                  Ops.cpp.inc
++                  BYPRODUCTS
++                  Dialect.h.inc
++                  Dialect.cpp.inc
++                  OpsConversions.inc
++                  Ops.h.inc
++                  Ops.cpp.inc)
+ 
+ set(LLVM_TARGET_DEFINITIONS TritonAMDGPUAttrDefs.td)
+ mlir_tablegen(TritonAMDGPUEnums.h.inc -gen-enum-decls)
+@@ -16,3 +30,16 @@
+ mlir_tablegen(TritonAMDGPUAttrDefs.h.inc -gen-attrdef-decls)
+ mlir_tablegen(TritonAMDGPUAttrDefs.cpp.inc -gen-attrdef-defs)
+ add_public_tablegen_target(TritonAMDGPUAttrDefsIncGen)
++add_custom_target(TritonAMDGPUAttrDefsIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  TritonAMDGPUEnums.h.inc
++                  TritonAMDGPUEnums.cpp.inc
++                  TritonAMDGPUAttrDefs.h.inc
++                  TritonAMDGPUAttrDefs.cpp.inc
++                  BYPRODUCTS
++                  TritonAMDGPUEnums.h.inc
++                  TritonAMDGPUEnums.cpp.inc
++                  TritonAMDGPUAttrDefs.h.inc
++                  TritonAMDGPUAttrDefs.cpp.inc)
++
+--- third_party/amd/include/Dialect/TritonAMDGPU/IR/TritonAMDGPUOps.td	2025-08-29 10:06:33.333523209 -0400
++++ third_party/amd/include/Dialect/TritonAMDGPU/IR/TritonAMDGPUOps.td	2025-09-02 11:52:05.426075573 -0400
+@@ -102,7 +102,8 @@
+       // Build a ExtractSliceOp with static offsets and the same result type
+       OpBuilder<(ins "RankedTensorType":$resultType,
+           "Value":$source,
+-          "ArrayRef<int64_t>": $static_offsets)>,
++          "ArrayRef<int64_t>": $static_offsets),
++                 [{ build($_builder, $_state, resultType, source, static_offsets); }]>
+   ];
+ 
+   let extraClassDeclaration = [{
+--- third_party/amd/include/TritonAMDGPUToLLVM/CMakeLists.txt	2025-08-28 17:32:40.453081679 -0400
++++ third_party/amd/include/TritonAMDGPUToLLVM/CMakeLists.txt	2025-08-29 10:06:45.298589939 -0400
+@@ -1,3 +1,8 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls --name TritonAMDGPUToLLVM)
+ add_public_tablegen_target(TritonAMDGPUConversionPassIncGen)
++add_custom_target(TritonAMDGPUConversionPassIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS Passes.h.inc
++                  BYPRODUCTS Passes.h.inc)
++
+--- third_party/amd/include/TritonAMDGPUTransforms/CMakeLists.txt	2025-08-28 17:32:40.453211349 -0400
++++ third_party/amd/include/TritonAMDGPUTransforms/CMakeLists.txt	2025-08-29 10:06:45.298475474 -0400
+@@ -1,3 +1,8 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls -name TritonAMDGPU)
+ add_public_tablegen_target(TritonAMDGPUTransformsIncGen)
++add_custom_target(TritonAMDGPUTransformsIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS Passes.h.inc
++                  BYPRODUCTS Passes.h.inc)
++
+--- third_party/amd/lib/Analysis/CMakeLists.txt	2025-08-29 10:06:33.333523209 -0400
++++ third_party/amd/lib/Analysis/CMakeLists.txt	2025-08-29 10:06:45.298207568 -0400
+@@ -3,7 +3,7 @@
+   AxisInfoExt.cpp
+ 
+   DEPENDS
+-  TritonTableGen
++  TritonTableGenCustomTarget
+ 
+   LINK_LIBS PUBLIC
+   MLIRAnalysis
+--- third_party/amd/lib/TritonAMDGPUToLLVM/ScalarizePackedFOps.cpp	2025-08-29 10:06:33.334850809 -0400
++++ third_party/amd/lib/TritonAMDGPUToLLVM/ScalarizePackedFOps.cpp	2025-08-29 15:48:48.228859589 -0400
+@@ -1,5 +1,6 @@
+ #include "TritonAMDGPUToLLVM/Passes.h"
+ #include "llvm/IR/Instructions.h"
++#include "llvm/IR/IRBuilder.h"
+ #include "llvm/IR/PatternMatch.h"
+ #include "llvm/IR/Verifier.h"
+ #include "llvm/Passes/PassBuilder.h"
+--- third_party/amd/test/lib/Analysis/CMakeLists.txt	2025-08-28 17:32:40.456375946 -0400
++++ third_party/amd/test/lib/Analysis/CMakeLists.txt	2025-08-29 10:06:45.298075448 -0400
+@@ -4,10 +4,10 @@
+   TestAxisInfo.cpp
+ 
+   DEPENDS
+-  TritonTableGen
+-  TritonGPUTableGen
+-  TritonGPUAttrDefsIncGen
+-  TritonGPUTypeInterfacesIncGen
++  TritonTableGenCustomTarget
++  TritonGPUTableGenCustomTarget
++  TritonGPUAttrDefsIncGenCustomTarget
++  TritonGPUTypeInterfacesIncGenCustomTarget
+ 
+   LINK_LIBS PUBLIC
+   MLIRPass
+--- third_party/amd/unittest/Conversion/CMakeLists.txt	2025-08-28 17:32:40.456505453 -0400
++++ third_party/amd/unittest/Conversion/CMakeLists.txt	2025-09-01 15:20:29.902169778 -0400
+@@ -5,6 +5,7 @@
+     TritonAnalysis
+     TritonIR
+     TritonGPUIR
++    TritonGPUTransforms
+     TritonAMDGPUToLLVM
+     MLIRUBToLLVM
+     TritonAMDUtils
+--- third_party/amd/unittest/Conversion/OptimizeLDSTest.cpp	2025-08-28 17:32:40.456521236 -0400
++++ third_party/amd/unittest/Conversion/OptimizeLDSTest.cpp	2025-09-01 18:56:15.948617899 -0400
+@@ -4,6 +4,10 @@
+ #include <gtest/gtest.h>
+ #include <numeric>
+ 
++#include "triton/Dialect/TritonGPU/IR/Ops.h.inc"
++#include "triton/Dialect/TritonGPU/IR/Ops.cpp.inc"
++#include "Dialect/TritonAMDGPU/IR/Ops.cpp.inc"
++
+ namespace mlir {
+ 
+ template <unsigned P> bool checkProdEq(ArrayRef<unsigned> a) {
+--- third_party/nvidia/hopper/include/Transforms/CMakeLists.txt	2025-08-28 17:32:40.457956354 -0400
++++ third_party/nvidia/hopper/include/Transforms/CMakeLists.txt	2025-08-29 10:06:45.296306125 -0400
+@@ -1,3 +1,8 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls -name NVHopperTransforms)
+ add_public_tablegen_target(NVHopperTransformsIncGen)
++add_custom_target(NVHopperTransformsIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS Passes.h.inc
++                  BYPRODUCTS Passes.h.inc)
++
+--- third_party/nvidia/include/Dialect/NVGPU/IR/CMakeLists.txt	2025-08-28 17:32:40.458559379 -0400
++++ third_party/nvidia/include/Dialect/NVGPU/IR/CMakeLists.txt	2025-08-29 10:06:45.297351890 -0400
+@@ -11,8 +11,35 @@
+ add_mlir_doc(NVGPUDialect NVGPUDialect dialects/ -gen-dialect-doc)
+ add_mlir_doc(NVGPUOps NVGPUOps dialects/ -gen-op-doc)
+ add_public_tablegen_target(NVGPUTableGen)
++add_custom_target(NVGPUTableGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  Dialect.h.inc
++                  Dialect.cpp.inc
++                  OpsConversions.inc
++                  Ops.h.inc
++                  Ops.cpp.inc
++                  OpsEnums.h.inc
++                  OpsEnums.cpp.inc
++                  BYPRODUCTS
++                  Dialect.h.inc
++                  Dialect.cpp.inc
++                  OpsConversions.inc
++                  Ops.h.inc
++                  Ops.cpp.inc
++                  OpsEnums.h.inc
++                  OpsEnums.cpp.inc)
+ 
+ set(LLVM_TARGET_DEFINITIONS NVGPUAttrDefs.td)
+ mlir_tablegen(NVGPUAttrDefs.h.inc -gen-attrdef-decls)
+ mlir_tablegen(NVGPUAttrDefs.cpp.inc -gen-attrdef-defs)
+ add_public_tablegen_target(NVGPUAttrDefsIncGen)
++add_custom_target(NVGPUAttrDefsIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  NVGPUAttrDefs.h.inc
++                  NVGPUAttrDefs.cpp.inc
++                  BYPRODUCTS
++                  NVGPUAttrDefs.h.inc
++                  NVGPUAttrDefs.cpp.inc)
++
+--- third_party/nvidia/include/Dialect/NVWS/IR/CMakeLists.txt	2025-08-29 10:06:33.336523122 -0400
++++ third_party/nvidia/include/Dialect/NVWS/IR/CMakeLists.txt	2025-08-29 10:06:45.297639114 -0400
+@@ -10,6 +10,22 @@
+ add_mlir_doc(NVWSDialect NVWSDialect dialects/ -gen-dialect-doc)
+ add_mlir_doc(NVWSOps NVWSOps dialects/ -gen-op-doc)
+ add_public_tablegen_target(NVWSTableGen)
++add_custom_target(NVWSTableGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  Dialect.h.inc
++                  Dialect.cpp.inc
++                  Ops.h.inc
++                  Ops.cpp.inc
++                  Types.h.inc
++                  Types.cpp.inc
++                  BYPRODUCTS
++                  Dialect.h.inc
++                  Dialect.cpp.inc
++                  Ops.h.inc
++                  Ops.cpp.inc
++                  Types.h.inc
++                  Types.cpp.inc)
+ 
+ set(LLVM_TARGET_DEFINITIONS NVWSAttrDefs.td)
+ mlir_tablegen(NVWSAttrDefs.h.inc -gen-attrdef-decls)
+@@ -17,3 +33,16 @@
+ mlir_tablegen(NVWSAttrEnums.h.inc -gen-enum-decls)
+ mlir_tablegen(NVWSAttrEnums.cpp.inc -gen-enum-defs)
+ add_public_tablegen_target(NVWSAttrDefsIncGen)
++add_custom_target(NVWSAttrDefsIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS
++                  NVWSAttrDefs.h.inc
++                  NVWSAttrDefs.cpp.inc
++                  NVWSAttrEnums.h.inc
++                  NVWSAttrEnums.cpp.inc
++                  BYPRODUCTS
++                  NVWSAttrDefs.h.inc
++                  NVWSAttrDefs.cpp.inc
++                  NVWSAttrEnums.h.inc
++                  NVWSAttrEnums.cpp.inc)
++
+--- third_party/nvidia/include/Dialect/NVWS/Transforms/CMakeLists.txt	2025-08-28 17:32:40.458698760 -0400
++++ third_party/nvidia/include/Dialect/NVWS/Transforms/CMakeLists.txt	2025-08-29 10:06:45.297492171 -0400
+@@ -1,3 +1,8 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls -name NVWSTransforms)
+ add_public_tablegen_target(NVWSTransformsIncGen)
++add_custom_target(NVWSTransformsIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS Passes.h.inc
++                  BYPRODUCTS Passes.h.inc)
++
+--- third_party/nvidia/include/NVGPUToLLVM/CMakeLists.txt	2025-08-28 17:32:40.458868169 -0400
++++ third_party/nvidia/include/NVGPUToLLVM/CMakeLists.txt	2025-08-29 10:06:45.297763566 -0400
+@@ -1,3 +1,8 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls --name NVGPUToLLVM)
+ add_public_tablegen_target(NVGPUConversionPassIncGen)
++add_custom_target(NVGPUConversionPassIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS Passes.h.inc
++                  BYPRODUCTS Passes.h.inc)
++
+--- third_party/nvidia/include/TritonNVIDIAGPUToLLVM/CMakeLists.txt	2025-08-28 17:32:40.458910645 -0400
++++ third_party/nvidia/include/TritonNVIDIAGPUToLLVM/CMakeLists.txt	2025-08-29 10:06:45.297201397 -0400
+@@ -1,3 +1,8 @@
+ set(LLVM_TARGET_DEFINITIONS Passes.td)
+ mlir_tablegen(Passes.h.inc -gen-pass-decls --name TritonNVIDIAGPUToLLVM)
+ add_public_tablegen_target(TritonNVIDIAGPUConversionPassIncGen)
++add_custom_target(TritonNVIDIAGPUConversionPassIncGenCustomTarget
++                  COMMAND /bin/true
++                  DEPENDS Passes.h.inc
++                  BYPRODUCTS Passes.h.inc)
++
+--- third_party/nvidia/lib/Dialect/NVGPU/IR/CMakeLists.txt	2025-08-28 17:32:40.459214295 -0400
++++ third_party/nvidia/lib/Dialect/NVGPU/IR/CMakeLists.txt	2025-08-29 10:06:45.296789983 -0400
+@@ -2,8 +2,12 @@
+   Dialect.cpp
+ 
+   DEPENDS
++  NVWSTableGen
++  NVWSAttrDefsIncGen
++  NVWSTransformsIncGen
+   NVGPUTableGen
+   NVGPUAttrDefsIncGen
++  TritonNVIDIAGPUConversionPassIncGen
+ 
+   LINK_LIBS PUBLIC
+   MLIRLLVMDialect
+--- third_party/nvidia/lib/Dialect/NVWS/IR/CMakeLists.txt	2025-08-28 17:32:40.459265714 -0400
++++ third_party/nvidia/lib/Dialect/NVWS/IR/CMakeLists.txt	2025-08-29 10:06:45.296927337 -0400
+@@ -5,6 +5,11 @@
+   DEPENDS
+   NVWSTableGen
+   NVWSAttrDefsIncGen
++  NVWSTransformsIncGen
++  NVGPUTableGen
++  NVGPUAttrDefsIncGen
++  NVGPUConversionPassIncGen
++  TritonNVIDIAGPUConversionPassIncGen
+ 
+   LINK_LIBS PUBLIC
+   TritonIR
+--- third_party/nvidia/lib/NVGPUToLLVM/CMakeLists.txt	2025-08-29 10:06:33.336523122 -0400
++++ third_party/nvidia/lib/NVGPUToLLVM/CMakeLists.txt	2025-08-29 10:06:45.297070392 -0400
+@@ -2,6 +2,8 @@
+     NVGPUToLLVMPass.cpp
+ 
+     DEPENDS
++    NVGPUTableGen
++    NVGPUAttrDefsIncGen
+     NVGPUConversionPassIncGen
+     NVGPUIR
+ )
+--- third_party/nvidia/lib/TritonNVIDIAGPUToLLVM/CMakeLists.txt	2025-08-29 10:06:33.336523122 -0400
++++ third_party/nvidia/lib/TritonNVIDIAGPUToLLVM/CMakeLists.txt	2025-08-29 10:06:45.296622562 -0400
+@@ -21,8 +21,10 @@
+     TargetInfo.cpp
+ 
+     DEPENDS
+-    TritonNVIDIAGPUConversionPassIncGen
++    NVGPUTableGen
+     NVGPUAttrDefsIncGen
++    NVGPUConversionPassIncGen
++    TritonNVIDIAGPUConversionPassIncGen
+ 
+     LINK_LIBS PUBLIC
+     TritonGPUToLLVM
+--- third_party/nvidia/lib/TritonNVIDIAGPUToLLVM/Utility.cpp	2025-08-29 10:06:33.337523093 -0400
++++ third_party/nvidia/lib/TritonNVIDIAGPUToLLVM/Utility.cpp	2025-08-30 16:52:08.191184012 -0400
+@@ -114,7 +114,9 @@
+ 
+ /// Create a predicate with just single active thread.
+ Value createElectPredicate(Location loc, RewriterBase &rewriter) {
+-  return rewriter.create<NVVM::ElectSyncOp>(loc, i1_ty);
++  auto b = TritonLLVMOpBuilder(loc, rewriter);
++  Value mask = b.i32_val(0xFFFFFFFF);
++  return rewriter.create<NVVM::ElectSyncOp>(loc, i1_ty, mask);
+ }
+ 
+ void createSyncWarp(Location loc, OpBuilder &rewriter) {
+--- third_party/proton/CMakeLists.txt	2025-08-29 10:06:33.337523093 -0400
++++ third_party/proton/CMakeLists.txt	2025-08-29 10:06:45.297927962 -0400
+@@ -2,6 +2,10 @@
+ 
+ set(PROTON_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/csrc")
+ 
++find_package(CUPTI REQUIRED)
++find_package(ROCTRACER REQUIRED)
++find_package(nlohmann_json REQUIRED)
++
+ # ============ Check for includes =============
+ if(NOT CUPTI_INCLUDE_DIR)
+   message(FATAL_ERROR "CUPTI include directory not defined")
+@@ -9,8 +13,12 @@
+ if(NOT ROCTRACER_INCLUDE_DIR)
+   message(FATAL_ERROR "ROCTRACER include directory not defined")
+ endif()
+-if(NOT JSON_INCLUDE_DIR)
+-  message(FATAL_ERROR "JSON include directory not defined")
++if(nlohmann_json_FOUND)
++  include_directories(${nlohmann_json_INCLUDE_DIRS})
++  set(JSON_INCLUDE_DIR ${nlohmann_json_INCLUDE_DIRS})
++else()
++  message(FATAL_ERROR
++          "JSON include directory is not defined or could not be found")
+ endif()
+ 
+ # ============ Dependencies =============
+@@ -23,21 +31,18 @@
+ # ============ Define a function to create object libraries ============
+ function(add_proton_library name)
+   add_library(${name} OBJECT ${ARGN})
+-
+   target_link_libraries(${name} PRIVATE Python3::Module pybind11::headers)
+ 
+   # Use system to skip warnings caused by legacy clang compilers
+   target_include_directories(${name}
+-    SYSTEM PRIVATE
+-      "${ROCTRACER_INCLUDE_DIR}"
+-  )
++    SYSTEM PRIVATE ${ROCTRACER_INCLUDE_DIR})
+ 
+   target_include_directories(${name}
+     PRIVATE
+-      "${CUPTI_INCLUDE_DIR}"
+-      "${JSON_INCLUDE_DIR}"
+-      "${PROTON_SRC_DIR}/include"
+-  )
++      ${CUPTI_INCLUDE_DIR}
++      ${ROCTRACER_INCLUDE_DIR}
++      ${JSON_INCLUDE_DIR}
++      ${PROTON_SRC_DIR}/include)
+ 
+   # If HIP is AMD-based
+   target_compile_definitions(${name} PRIVATE __HIP_PLATFORM_AMD__)
+@@ -47,13 +52,13 @@
+ endfunction()
+ 
+ # ============ Add subdirectory with actual code that calls add_proton_library ============
+-add_subdirectory("${PROTON_SRC_DIR}")
++message(STATUS "add_subdirectory(${PROTON_SRC_DIR})")
++add_subdirectory(${PROTON_SRC_DIR})
+ 
+ # ============ Possibly handle macOS specifics ============
+ if(APPLE)
+   set(CMAKE_SHARED_LIBRARY_SUFFIX ".so")
+-  # Other platforms build with -flto, but we found that this adds significant overhead to our macos CI without providing a major benefit.
+-  set(PROTON_PYTHON_LDFLAGS "-undefined dynamic_lookup")
++  set(PROTON_PYTHON_LDFLAGS "-flto -undefined dynamic_lookup")
+ endif()
+ 
+ # ============ Collect all object libraries from property and build final shared lib ============
+@@ -70,8 +75,8 @@
+ endforeach()
+ 
+ add_library(proton SHARED ${_proton_obj_sources})
+-
+ target_link_libraries(proton PRIVATE Python3::Module)
++
+ # Apply any macOS linker flags or extra link options
+ if(PROTON_PYTHON_LDFLAGS)
+   target_link_options(proton PRIVATE ${PROTON_PYTHON_LDFLAGS})

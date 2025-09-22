@@ -6,10 +6,10 @@ add_triton_library(TritonAnalysis
   Utility.cpp
 
   DEPENDS
-  TritonTableGen
-  TritonGPUTableGen
-  TritonGPUAttrDefsIncGen
-  TritonGPUTypeInterfacesIncGen
+  TritonTableGenCustomTarget
+  TritonGPUTableGenCustomTarget
+  TritonGPUAttrDefsIncGenCustomTarget
+  TritonGPUTypeInterfacesIncGenCustomTarget
 
   LINK_LIBS PUBLIC
   MLIRAnalysis

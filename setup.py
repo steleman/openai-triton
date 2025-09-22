@@ -138,8 +138,7 @@ def get_build_type():
     elif check_env_flag("TRITON_BUILD_WITH_O1"):
         return "TritonBuildWithO1"
     else:
-        # TODO: change to release when stable enough
-        return "TritonRelBuildWithAsserts"
+        return "Release"
 
 
 def get_env_with_keys(key: list):
@@ -437,8 +436,11 @@ class CMakeBuild(build_ext):
         return cmake_args
 
     def build_extension(self, ext):
-        lit_dir = shutil.which('lit')
-        ninja_dir = shutil.which('ninja')
+        lit_dir = get_env_with_keys(["LLVM_EXTERNAL_LIT"])
+        if lit_dir == "":
+            lit_dir = shutil.which('llvm-lit')
+
+        gmake_dir = shutil.which('gmake')
         # lit is used by the test suite
         thirdparty_cmake_args = get_thirdparty_packages([get_llvm_package_info()])
         thirdparty_cmake_args += self.get_pybind11_cmake_args()
@@ -450,16 +452,41 @@ class CMakeBuild(build_ext):
             os.makedirs(self.build_temp)
         # python directories
         python_include_dir = sysconfig.get_path("platinclude")
+
+        for be in backends:
+             print("enabling backend: " + str(be))
+
         cmake_args = [
-            "-G", "Ninja",  # Ninja is much faster than make
-            "-DCMAKE_MAKE_PROGRAM=" +
-            ninja_dir,  # Pass explicit path to ninja otherwise cmake may cache a temporary path
-            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON", "-DLLVM_ENABLE_WERROR=ON",
-            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=" + extdir, "-DTRITON_BUILD_PYTHON_MODULE=ON",
-            "-DPython3_EXECUTABLE:FILEPATH=" + sys.executable, "-DPython3_INCLUDE_DIR=" + python_include_dir,
+            "-G", "Unix Makefiles",
+            "-DCMAKE_BUILD_TYPE:STRING=" + os.getenv("BUILD_TYPE", "Release"),
+            "-DCMAKE_C_COMPILER:FILEPATH=" + os.getenv("CC", "/usr/bin/gcc"),
+            "-DCMAKE_CXX_COMPILER:FILEPATH=" + os.getenv("CXX", "/usr/bin/g++"),
+            "-DCMAKE_C_FLAGS:STRING=" + os.getenv("CFLAGS", "-O2 -std=gnu11"),
+            "-DCMAKE_CXX_FLAGS:STRING=" + os.getenv("CXXFLAGS", "-O2 -std=gnu++17"),
+            "-DCMAKE_VERBOSE_MAKEFILE:BOOL=ON",
+            "-DCMAKE_MAKE_PROGRAM=" + gmake_dir,
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            "-DCMAKE_BUILD_RPATH:STRING=" + os.getenv("RUNPATH", ""),
+            "-DCMAKE_INSTALL_RPATH:STRING=" + os.getenv("RUNPATH", ""),
+						"-DLLVM_ENABLE_WERROR=ON",
+            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=" + extdir,
+						"-DTRITON_BUILD_PYTHON_MODULE=ON",
+            "-DPython3_EXECUTABLE:FILEPATH=" + sys.executable,
+						"-DPython3_INCLUDE_DIR=" + python_include_dir,
             "-DTRITON_CODEGEN_BACKENDS=" + ';'.join([b.name for b in backends if not b.is_external]),
             "-DTRITON_PLUGIN_DIRS=" + ';'.join([b.src_dir for b in backends if b.is_external]),
-            "-DTRITON_WHEEL_DIR=" + wheeldir
+            "-DTRITON_WHEEL_DIR=" + wheeldir,
+            "-DROCTRACER_PREFIX=" + os.getenv("ROCTRACER_PREFIX", "/opt/rocm-6.4.3"),
+            "-DCUDA_INCLUDE_DIR=" + os.getenv("CUDA_INCLUDE_DIR", "/usr/local/cuda-12.9/include"),
+            "-DCUDA_LIBRARY_DIR=" + os.getenv("CUDA_LIBRARY_DIR", "/usr/local/cuda-12.9/lib64"),
+						"-DCUPTI_INCLUDE_DIR=" + os.getenv("CUPTI_INCLUDE_DIR", "/usr/local/cuda-12.9/targets/x86_64-linux/include"),
+						"-DCUPTI_LIB_DIR=" + os.getenv("CUPTI_LIB_DIR", "/usr/local/cuda-12.9/targets/x86_64-linux/lib"),
+						"-DROCM_INCLUDE_DIR=" + os.getenv("ROCM_INCLUDE_DIR", "/opt/rocm-6.4.3/include"),
+						"-DROCM_LIBRARY_DIR=" + os.getenv("ROCM_LIBRARY_DIR", "/opt/rocm-6.4.3/lib"),
+						"-DLLVM_CMAKE_DIR=" + os.getenv("LLVM_CMAKE_DIR", "/opt/triton/lib64/cmake/llvm"),
+						"-DMLIR_DIR=" + os.getenv("MLIR_DIR", "/opt/triton/lib64/cmake/mlir"),
+						"-DMLIR_CMAKE_DIR=" + os.getenv("MLIR_CMAKE_DIR", "/opt/triton/lib64/cmake/mlir"),
+						"-DLLVM_EXTERNAL_LIT=" + os.getenv("LLVM_EXTERNAL_LIT", "/opt/triton/bin/llvm-lit"),
         ]
         if lit_dir is not None:
             cmake_args.append("-DLLVM_EXTERNAL_LIT=" + lit_dir)
@@ -478,12 +505,8 @@ class CMakeBuild(build_ext):
 
         if check_env_flag("TRITON_BUILD_WITH_CLANG_LLD"):
             cmake_args += [
-                "-DCMAKE_C_COMPILER=clang",
-                "-DCMAKE_CXX_COMPILER=clang++",
-                "-DCMAKE_LINKER=lld",
-                "-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld",
-                "-DCMAKE_MODULE_LINKER_FLAGS=-fuse-ld=lld",
-                "-DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld",
+                "-DCMAKE_C_COMPILER=/usr/bin/gcc",
+                "-DCMAKE_CXX_COMPILER=/usr/bin/g++",
             ]
 
         # Note that asan doesn't work with binaries that use the GPU, so this is
@@ -521,7 +544,11 @@ class CMakeBuild(build_ext):
 
         env = os.environ.copy()
         cmake_dir = get_cmake_dir()
+        print("pwd: " + os.getcwd())
+
         subprocess.check_call(["cmake", self.base_dir] + cmake_args, cwd=cmake_dir, env=env)
+        subprocess.call(['sh', './fix-bad-compile-flags.sh'])
+        subprocess.call(['sh', './fix-bad-link-flags.sh'])
         subprocess.check_call(["cmake", "--build", "."] + build_args, cwd=cmake_dir)
         subprocess.check_call(["cmake", "--build", ".", "--target", "mlir-doc"], cwd=cmake_dir)
 
@@ -531,6 +558,10 @@ def download_and_copy_dependencies():
     with open(nvidia_version_path, "r") as nvidia_version_file:
         # parse this json file to get the version of the nvidia toolchain
         NVIDIA_TOOLCHAIN_VERSION = json.load(nvidia_version_file)
+        print("NVIDIA_TOOLCHAIN_VERSION: " + str(NVIDIA_TOOLCHAIN_VERSION))
+        print("system: {system}")
+        print("arch: {arch}")
+        print("version: {version}")
 
     exe_extension = sysconfig.get_config_var("EXE")
     download_and_copy(

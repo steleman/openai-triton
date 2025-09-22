@@ -10,6 +10,22 @@ mlir_tablegen(Types.cpp.inc -gen-typedef-defs -typedefs-dialect=nvws)
 add_mlir_doc(NVWSDialect NVWSDialect dialects/ -gen-dialect-doc)
 add_mlir_doc(NVWSOps NVWSOps dialects/ -gen-op-doc)
 add_public_tablegen_target(NVWSTableGen)
+add_custom_target(NVWSTableGenCustomTarget
+                  COMMAND /bin/true
+                  DEPENDS
+                  Dialect.h.inc
+                  Dialect.cpp.inc
+                  Ops.h.inc
+                  Ops.cpp.inc
+                  Types.h.inc
+                  Types.cpp.inc
+                  BYPRODUCTS
+                  Dialect.h.inc
+                  Dialect.cpp.inc
+                  Ops.h.inc
+                  Ops.cpp.inc
+                  Types.h.inc
+                  Types.cpp.inc)
 
 set(LLVM_TARGET_DEFINITIONS NVWSAttrDefs.td)
 mlir_tablegen(NVWSAttrDefs.h.inc -gen-attrdef-decls)
@@ -17,3 +33,16 @@ mlir_tablegen(NVWSAttrDefs.cpp.inc -gen-attrdef-defs)
 mlir_tablegen(NVWSAttrEnums.h.inc -gen-enum-decls)
 mlir_tablegen(NVWSAttrEnums.cpp.inc -gen-enum-defs)
 add_public_tablegen_target(NVWSAttrDefsIncGen)
+add_custom_target(NVWSAttrDefsIncGenCustomTarget
+                  COMMAND /bin/true
+                  DEPENDS
+                  NVWSAttrDefs.h.inc
+                  NVWSAttrDefs.cpp.inc
+                  NVWSAttrEnums.h.inc
+                  NVWSAttrEnums.cpp.inc
+                  BYPRODUCTS
+                  NVWSAttrDefs.h.inc
+                  NVWSAttrDefs.cpp.inc
+                  NVWSAttrEnums.h.inc
+                  NVWSAttrEnums.cpp.inc)
+

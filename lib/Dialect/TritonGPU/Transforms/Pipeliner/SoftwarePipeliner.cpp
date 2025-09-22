@@ -129,11 +129,11 @@ static void expandLoops(ModuleOp moduleOp) {
       if (isEpilogue) {
         // Return false for the predicate of the peeled iteration
         return rewriter.create<mlir::arith::ConstantIntOp>(
-            predOp.getLoc(), 0, predOp.getResult().getType());
+            predOp.getLoc(), predOp.getResult().getType(), 0L);
       } else {
         if (predOp.getStage() == predOp.getMaxStage() - 1) {
           return rewriter.create<mlir::arith::ConstantIntOp>(
-              predOp.getLoc(), 1, predOp.getResult().getType());
+              predOp.getLoc(), predOp.getResult().getType(), 1L);
         } else {
           OpBuilder::InsertionGuard guard(rewriter);
           rewriter.setInsertionPoint(op);

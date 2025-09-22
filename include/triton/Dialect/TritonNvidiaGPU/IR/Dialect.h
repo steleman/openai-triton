@@ -50,7 +50,8 @@ struct TensorMemory : public SideEffects::Resource::Base<TensorMemory> {
 
 struct TMemAllocation {
   TMemAllocation(int numCols, int numRows)
-      : numCols(numCols), numRows(numRows) {}
+  : numRows(numRows), numCols(numCols) {}
+
   int numRows;
   int numCols;
 };

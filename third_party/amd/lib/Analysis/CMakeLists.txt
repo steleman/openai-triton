@@ -3,7 +3,7 @@ add_triton_library(TritonAMDAnalysis
   AxisInfoExt.cpp
 
   DEPENDS
-  TritonTableGen
+  TritonTableGenCustomTarget
 
   LINK_LIBS PUBLIC
   MLIRAnalysis

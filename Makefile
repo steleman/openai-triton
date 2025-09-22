@@ -13,21 +13,21 @@ NUM_PROCS ?= 8
 
 .PHONY: all
 all:
-	ninja -C $(BUILD_DIR)
+	gmake -C $(BUILD_DIR)
 
 .PHONY: triton-opt
 triton-opt:
-	ninja -C $(BUILD_DIR) triton-opt
+	gmake -C $(BUILD_DIR) triton-opt
 
 # Testing
 
 .PHONY: test-lit
 test-lit:
-	ninja -C $(BUILD_DIR) check-triton-lit-tests
+	gmake -C $(BUILD_DIR) check-triton-lit-tests
 
 .PHONY: test-cpp
 test-cpp:
-	ninja -C $(BUILD_DIR) check-triton-unit-tests
+	gmake -C $(BUILD_DIR) check-triton-unit-tests
 
 .PHONY: test-unit
 test-unit: all

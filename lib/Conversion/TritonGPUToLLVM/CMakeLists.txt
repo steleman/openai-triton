@@ -22,7 +22,7 @@ add_triton_library(TritonGPUToLLVM
     ViewOpToLLVM.cpp
 
     DEPENDS
-    TritonGPUConversionPassIncGen
+    TritonGPUConversionPassIncGenCustomTarget
 
     LINK_LIBS PUBLIC
     MLIRIR

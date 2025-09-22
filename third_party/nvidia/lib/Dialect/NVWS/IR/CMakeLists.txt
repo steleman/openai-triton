@@ -5,6 +5,11 @@ add_triton_library(NVWSIR
   DEPENDS
   NVWSTableGen
   NVWSAttrDefsIncGen
+  NVWSTransformsIncGen
+  NVGPUTableGen
+  NVGPUAttrDefsIncGen
+  NVGPUConversionPassIncGen
+  TritonNVIDIAGPUConversionPassIncGen
 
   LINK_LIBS PUBLIC
   TritonIR

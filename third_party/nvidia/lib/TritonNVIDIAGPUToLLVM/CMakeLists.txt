@@ -21,8 +21,10 @@ add_triton_library(TritonNVIDIAGPUToLLVM
     TargetInfo.cpp
 
     DEPENDS
-    TritonNVIDIAGPUConversionPassIncGen
+    NVGPUTableGen
     NVGPUAttrDefsIncGen
+    NVGPUConversionPassIncGen
+    TritonNVIDIAGPUConversionPassIncGen
 
     LINK_LIBS PUBLIC
     TritonGPUToLLVM

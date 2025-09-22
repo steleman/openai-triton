@@ -38,7 +38,25 @@ add_triton_library(TritonGPUTransforms
   WarpSpecialization/RewritePartitionDependencies.cpp
 
   DEPENDS
-  TritonGPUTransformsIncGen
+  TritonGPUTransformsIncGenCustomTarget
+  TritonGPUTableGenCustomTarget
+  TritonGPUAttrDefsIncGenCustomTarget
+  TritonGPUTypeInterfacesIncGenCustomTarget
+  TritonNvidiaGPUTableGenCustomTarget
+  TritonNvidiaGPUAttrDefsIncGenCustomTarget
+  TritonNvidiaGPUOpInterfacesIncGenCustomTarget
+  NVHopperTransformsIncGenCustomTarget
+  NVWSTableGenCustomTarget
+  NVWSAttrDefsIncGenCustomTarget
+  NVWSTransformsIncGenCustomTarget
+  NVGPUTableGenCustomTarget
+  NVGPUAttrDefsIncGenCustomTarget
+  NVGPUConversionPassIncGenCustomTarget
+  TritonNVIDIAGPUConversionPassIncGenCustomTarget
+  TritonAMDGPUTableGenCustomTarget
+  TritonAMDGPUAttrDefsIncGenCustomTarget
+  TritonAMDGPUTransformsIncGenCustomTarget
+  TritonAMDGPUConversionPassIncGenCustomTarget
 
   LINK_LIBS PUBLIC
   MLIRTransforms

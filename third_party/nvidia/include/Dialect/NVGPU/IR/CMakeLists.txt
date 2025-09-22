@@ -11,8 +11,35 @@ mlir_tablegen(OpsEnums.cpp.inc -gen-enum-defs)
 add_mlir_doc(NVGPUDialect NVGPUDialect dialects/ -gen-dialect-doc)
 add_mlir_doc(NVGPUOps NVGPUOps dialects/ -gen-op-doc)
 add_public_tablegen_target(NVGPUTableGen)
+add_custom_target(NVGPUTableGenCustomTarget
+                  COMMAND /bin/true
+                  DEPENDS
+                  Dialect.h.inc
+                  Dialect.cpp.inc
+                  OpsConversions.inc
+                  Ops.h.inc
+                  Ops.cpp.inc
+                  OpsEnums.h.inc
+                  OpsEnums.cpp.inc
+                  BYPRODUCTS
+                  Dialect.h.inc
+                  Dialect.cpp.inc
+                  OpsConversions.inc
+                  Ops.h.inc
+                  Ops.cpp.inc
+                  OpsEnums.h.inc
+                  OpsEnums.cpp.inc)
 
 set(LLVM_TARGET_DEFINITIONS NVGPUAttrDefs.td)
 mlir_tablegen(NVGPUAttrDefs.h.inc -gen-attrdef-decls)
 mlir_tablegen(NVGPUAttrDefs.cpp.inc -gen-attrdef-defs)
 add_public_tablegen_target(NVGPUAttrDefsIncGen)
+add_custom_target(NVGPUAttrDefsIncGenCustomTarget
+                  COMMAND /bin/true
+                  DEPENDS
+                  NVGPUAttrDefs.h.inc
+                  NVGPUAttrDefs.cpp.inc
+                  BYPRODUCTS
+                  NVGPUAttrDefs.h.inc
+                  NVGPUAttrDefs.cpp.inc)
+

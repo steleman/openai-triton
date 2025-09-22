@@ -102,7 +102,8 @@ def ExtractSliceOp : TT_AMDGPU_Op<"extract_slice", [Pure]> {
       // Build a ExtractSliceOp with static offsets and the same result type
       OpBuilder<(ins "RankedTensorType":$resultType,
           "Value":$source,
-          "ArrayRef<int64_t>": $static_offsets)>,
+          "ArrayRef<int64_t>": $static_offsets),
+                 [{ build($_builder, $_state, resultType, source, static_offsets); }]>
   ];
 
   let extraClassDeclaration = [{

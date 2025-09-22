@@ -4,6 +4,10 @@
 #include <gtest/gtest.h>
 #include <numeric>
 
+#include "triton/Dialect/TritonGPU/IR/Ops.h.inc"
+#include "triton/Dialect/TritonGPU/IR/Ops.cpp.inc"
+#include "Dialect/TritonAMDGPU/IR/Ops.cpp.inc"
+
 namespace mlir {
 
 template <unsigned P> bool checkProdEq(ArrayRef<unsigned> a) {

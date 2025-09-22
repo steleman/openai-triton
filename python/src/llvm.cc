@@ -129,7 +129,10 @@ std::string translateLLVMIRToASM(llvm::Module &module,
     llvm::dbgs() << reportStream.str();
     timePassesStr.clear();
   }
-  // module->print(llvm::outs(), nullptr);
+
+#if defined(TRITON_DEBUG)
+  module->print(llvm::outs(), nullptr);
+#endif
 
   // create machine
   module.setTargetTriple(Triple(triple));
@@ -160,7 +163,6 @@ std::string translateLLVMIRToASM(llvm::Module &module,
 using ret = py::return_value_policy;
 
 void init_triton_llvm(py::module &&m) {
-
   py::class_<llvm::LLVMContext>(m, "context", py::module_local())
       .def(py::init<>());
   py::class_<llvm::SourceMgr>(m, "source_mgr", py::module_local())
@@ -279,14 +281,18 @@ void init_triton_llvm(py::module &&m) {
     if (!target) {
       throw std::runtime_error("target lookup error: " + error);
     }
+
+    llvm::Triple TT(triple);
     llvm::TargetOptions opt;
+
     // Target machine is only used to create the data layout.
     std::unique_ptr<llvm::TargetMachine> machine{target->createTargetMachine(
-        llvm::Triple(triple), proc, features, opt, llvm::Reloc::PIC_,
-        std::nullopt, llvm::CodeGenOptLevel::None)};
+        TT, proc, features, opt, llvm::Reloc::PIC_, std::nullopt,
+        llvm::CodeGenOptLevel::None)};
     // set data layout
     mod->setDataLayout(machine->createDataLayout());
   });
+
 
   m.def(
       "optimize_module",
@@ -310,6 +316,7 @@ void init_triton_llvm(py::module &&m) {
             }
           }
         }
+
         using namespace llvm;
         LoopAnalysisManager lam;
         FunctionAnalysisManager fam;
@@ -317,7 +324,7 @@ void init_triton_llvm(py::module &&m) {
         ModuleAnalysisManager mam;
 
         if (arch.empty()) {
-          llvm::TargetLibraryInfoImpl TLII;
+          llvm::TargetLibraryInfoImpl TLII(mod->getTargetTriple());
           TLII.disableAllFunctions();
           fam.registerPass([TLII = std::move(TLII)] {
             return llvm::TargetLibraryAnalysis(TLII);

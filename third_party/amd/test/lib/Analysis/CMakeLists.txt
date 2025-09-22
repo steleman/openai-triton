@@ -4,10 +4,10 @@ add_mlir_library(TritonAMDGPUTestAnalysis
   TestAxisInfo.cpp
 
   DEPENDS
-  TritonTableGen
-  TritonGPUTableGen
-  TritonGPUAttrDefsIncGen
-  TritonGPUTypeInterfacesIncGen
+  TritonTableGenCustomTarget
+  TritonGPUTableGenCustomTarget
+  TritonGPUAttrDefsIncGenCustomTarget
+  TritonGPUTypeInterfacesIncGenCustomTarget
 
   LINK_LIBS PUBLIC
   MLIRPass
