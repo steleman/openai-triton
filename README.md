@@ -32,12 +32,13 @@ You can find and download pre-built rpms and the corresponding Triton Wheel at m
 https://drive.google.com/drive/folders/1kGQJ9xZk6GENUZVOPEMRynbXC3HnO2ED?usp=drive_link
 
 These rpms install LLVM 21.1.1 and Triton 3.4.0 in `/opt/triton/llvm-21.1.1`.  You must install with `rpm`, and not `dnf`:
+
 `%> rpm -i --force --nodeps ./llvm-triton-21.1.1-100.fc41.x86_64.rpm`
 `%> rpm -i --force --nodeps ./triton-3.4.0+gitc817b9b6-500.fc41.x86_64.rpm`
 
 The Python Wheel installs normally with `pip3`.
 
-The rpm `python3-triton-3.4.0+gitc817b9b6-500.fc41.x86_64.rpm` contains the Python files for Triton packaged as an rpm. Its delivered contents are identical to the files delivered by the Triton Python Wheel.
+The rpm `python3-triton-3.4.0+gitc817b9b6-500.fc41.x86_64.rpm` contains the Python files for Triton packaged as an rpm. Its delivered contents are identical to the files delivered by the Triton Python Wheel. It installs its files in `/usr/lib64/python3.13./site-packages/` and `/usr/bin`.
 
 Installing CUDA 12.9 and AMD ROCm 6.4.3 on Fedora 41+ is left as an exercise for the reader. :-)
 
